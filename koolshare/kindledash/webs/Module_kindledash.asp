@@ -88,6 +88,7 @@ function conf2obj() {
 	E("kindledash_hot2_source").value = dbus["kindledash_hot2_source"] || "bilibili";
 	E("kindledash_hot_count").value = dbus["kindledash_hot_count"] || "4";
 	if (dbus["kindledash_version"]) E("kd_version").innerHTML = "&nbsp;-&nbsp;v" + dbus["kindledash_version"];
+	if (dbus["kindledash_envcheck"]) render_env();
 }
 
 function build_form() {
@@ -259,6 +260,73 @@ function validate(v) {
 		}, 1500);
 	}
 
+	// ---------- 运行环境: 自检 + 一键安装 ----------
+	var ENV_ITEMS = [["entware","Entware"],["python","Python3"],["pillow","Pillow"],["fonts","中文字体"],["app","程序文件"],["cron","定时任务"],["kindle","Kindle 连通"],["net","外网数据源"]];
+	var ENV_HINTS = {
+		entware: "需要 U 盘 ext2/3/4 分区 (amtm 或 USB应用插件格式化, 会清空数据)",
+		python:  "点『一键安装依赖』自动安装",
+		pillow:  "点『一键安装依赖』自动安装",
+		fonts:   "点『一键安装依赖』自动下载 (约 33MB)",
+		app:     "重装本插件即可写入",
+		cron:    "点『一键安装依赖』自动注册",
+		kindle:  "检查 Kindle 是否插在路由器 USB 口 / usbnet 是否开启",
+		net:     "路由器无法直连行情镜像, 检查外网/分流规则"
+	};
+	function mark(v){ return v ? "<span style='color:#3C3;font-weight:bold'>✓</span>" : "<span style='color:#F66;font-weight:bold'>✗</span>"; }
+	function render_env() {
+		var parts = (dbus["kindledash_envcheck"] || "").split("|");
+		var kv = {};
+		for (var i = 0; i < parts.length; i++) {
+			var p = parts[i].split(":");
+			kv[p[0]] = p[1] == "yes";
+		}
+		if (!parts[0]) { E("kd_env_result").innerHTML = ""; return; }
+		var h = "";
+		for (var j = 0; j < ENV_ITEMS.length; j++) {
+			var k = ENV_ITEMS[j][0];
+			if (!(k in kv)) continue;
+			h += "<span style='white-space:nowrap;margin-right:12px'>" + mark(kv[k]) + " " + ENV_ITEMS[j][1] + "</span>";
+		}
+		var bad = [];
+		for (var j2 = 0; j2 < ENV_ITEMS.length; j2++)
+			if (kv[ENV_ITEMS[j2][0]] === false) bad.push(ENV_ITEMS[j2][1] + "：" + ENV_HINTS[ENV_ITEMS[j2][0]]);
+		if (bad.length) h += "<div style='color:#F99;margin-top:4px'>" + bad.join("<br>") + "</div>";
+		else h += "<div style='color:#9C9;margin-top:4px'>全部就绪，直接点『保存并应用』即可。</div>";
+		E("kd_env_result").innerHTML = h;
+	}
+	function run_env(params, msg) {
+		var ts0 = dbus["kindledash_envcheck_ts"] || "0";
+		E("kd_env_result").innerHTML = "<span style='color:#FC6'>" + msg + "</span>";
+		call_api_quiet(parseInt(Math.random() * 100000000), params);
+		var n = 0;
+		var timer = setInterval(function() {
+			$.ajax({
+				type: "GET", url: "/_api/kindledash", dataType: "json", cache: false, async: true,
+				success: function(d) {
+					var nd = d.result[0] || {};
+					if (nd["kindledash_envcheck_ts"] && nd["kindledash_envcheck_ts"] != ts0) {
+						clearInterval(timer);
+						dbus = nd;
+						dbus["kindledash_envcheck_ts"] = nd["kindledash_envcheck_ts"];
+						render_env();
+						show_log();
+					} else if (++n > 100) {
+						clearInterval(timer);
+						E("kd_env_result").innerHTML = "<span style='color:#F66'>等待超时，稍后请点『环境自检』查看结果（安装耗时较长属正常）</span>";
+					}
+				},
+				error: function() {
+					if (++n > 100) { clearInterval(timer); E("kd_env_result").innerHTML = "<span style='color:#F66'>请求失败，请重试</span>"; }
+				}
+			});
+		}, 5000);
+	}
+	function env_check() { run_env(["doctor"], "正在自检环境（约 10 秒）..."); }
+	function env_provision() {
+		if (!confirm("将自动安装缺失的依赖（Entware→Python→Pillow→字体→定时任务），首次约 3~10 分钟。\n\n注意：Entware 需要 U 盘已格式化为 ext2/3/4 分区（amtm 或 USB应用插件可完成，会清空 U 盘数据）。\n\n继续？")) return;
+		run_env(["provision"], "正在安装依赖，请勿关闭页面（约 3~10 分钟）...");
+	}
+
 function show_log() {
 	$("#log_tr").show();
 	setTimeout(function(){ get_log(1); }, 300);
@@ -322,7 +390,20 @@ function get_log(flag) {
 									<div style="float:left;" class="formfonttitle">Kindle 仪表盘<span id="kd_version"></span></div>
 									<div style="float:right; width:15px; height:25px;margin-top:10px"><img id="return_btn" onclick="reload_Soft_Center();" align="right" style="cursor:pointer;position:absolute;margin-left:-30px;margin-top:-25px;" title="返回软件中心" src="/images/backprev.png" onMouseOver="this.src='/images/backprevclick.png'" onMouseOut="this.src='/images/backprev.png'"></img></div>
 									<div style="margin:30px 0 10px 5px;" class="splitLine"></div>
-									<div class="formfontdesc" id="cmdDesc">Kindle DXG 墨水屏副屏仪表盘配置。前提：U 盘已插（Entware 就绪）、Kindle 已插在路由器 USB 口。</div>
+									<div class="formfontdesc" id="cmdDesc">Kindle DXG 墨水屏副屏仪表盘配置。首次使用: 插上 U 盘和 Kindle → 点下方『环境自检』→ 缺什么点『一键安装依赖』。</div>
+
+									<!-- 运行环境 -->
+									<table class="FormTable kindle-sec" width="100%" border="1" align="center" cellpadding="4" cellspacing="0" bordercolor="#6b8fa3">
+										<thead><tr><td colspan="2">运行环境（首次使用先看这里）</td></tr></thead>
+										<tr>
+											<th class="kindle-th">依赖状态<br><span style="font-weight:normal;font-size:11px">Entware / Python / Pillow / 字体 / 程序 / 定时 / Kindle / 外网</span></th>
+											<td>
+												<input type="button" class="button_gen" style="width:90px" onclick="env_check();" value="环境自检">
+												<input type="button" class="button_gen" style="width:120px" onclick="env_provision();" value="一键安装依赖">
+												<div id="kd_env_result" style="font-size:12px;margin-top:6px;line-height:1.7"></div>
+											</td>
+										</tr>
+									</table>
 
 									<!-- 基本设置 -->
 									<table class="FormTable kindle-sec" width="100%" border="1" align="center" cellpadding="4" cellspacing="0" bordercolor="#6b8fa3">

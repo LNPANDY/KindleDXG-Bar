@@ -1,0 +1,30 @@
+{
+  "orientation": "portrait",
+  "title": "每日简报",
+  "width": 824,
+  "height": 1200,
+  "font_regular": "fonts/NotoSansCJKsc-Regular.otf",
+  "font_bold": "fonts/NotoSansCJKsc-Bold.otf",
+  "modules": ["crypto", "fastnews", "hot"],
+  "crypto": {
+    "source": "binance",
+    "vs_currency": "usd",
+    "pairs": ["BTC", "ETH", "SOL", "BNB", "XRP"],
+    "binance_symbols": ["BTC", "ETH", "SOL", "BNB", "XRP"],
+    "gate_symbols": []
+  },
+  "fastnews": {
+    "source": "sina7x24",
+    "count": 4,
+    "feeds": [
+      {"name": "36氪", "url": "https://36kr.com/feed"},
+      {"name": "Solidot", "url": "https://www.solidot.org/index.rss"},
+      {"name": "Cointelegraph", "url": "https://cointelegraph.com/rss"},
+      {"name": "ForesightNews", "url": "https://foresightnews.pro/rss"}
+    ]
+  },
+  "hot": [
+    {"source": "weibo", "count": 4},
+    {"source": "toutiao", "count": 4}
+  ]
+}
