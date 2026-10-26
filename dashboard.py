@@ -617,6 +617,26 @@ def wrap(draw, text, font, max_w):
     return lines
 
 
+def fit_lines(c_d, text, font, max_w, max_lines):
+    """wrap 后: 行数没超 → 原样全显(不加强制省略号); 超出 → 收缩末行再加省略号。
+    末行因标点悬挂轻微超宽时也收紧, 避免压出列外(双栏热榜压邻栏)。"""
+    lines = wrap(c_d, text, font, max_w)
+    if len(lines) <= max_lines:
+        if lines and c_d.textlength(lines[-1], font=font) > max_w:
+            last = lines[-1]
+            trimmed = last
+            while trimmed and c_d.textlength(trimmed, font=font) > max_w:
+                trimmed = trimmed[:-1]
+            lines[-1] = trimmed + ("…" if trimmed != last else "")
+        return lines
+    lines = lines[:max_lines]
+    last = lines[-1]
+    while last and c_d.textlength(last + "…", font=font) > max_w:
+        last = last[:-1]
+    lines[-1] = last + "…" if last else "…"
+    return lines
+
+
 class Canvas:
     def __init__(self, w, h):
         self.w, self.h = w, h
@@ -647,47 +667,52 @@ def draw_crypto(c, rect, coins, cfg, F):
     c.text((x, y), cfg.get("crypto_label", "加密货币"), F(28, True), 60)
     y += 44
     n = max(1, len(coins))
-    row_h = max(56, min(116, (h - (y - rect[1])) // n))
+    row_h = max(72, min(118, (h - (y - rect[1])) // n))
     pad = x + 2
     right = x + w - 4
-    f_sym, f_price = F(30, True), F(36, True)
-    f_name, f_chg = F(17), F(19, True)
+    f_sym, f_price = F(30, True), F(34, True)
+    f_name, f_chg = F(16), F(18, True)
+    vs = cfg.get("crypto", {}).get("vs_currency", "usd")
 
-    # 先统一量宽: 价格列取所有行的最大宽度, 曲线右边界固定 → 各行严格对齐
+    # 先统一量宽: symbol 列最大宽 / 价格列最大宽 → 曲线起终点所有行严格一致
     rows = []
-    max_pw = 0
+    max_sw = max_pw = 0
     for coin in coins:
-        price_s = fmt_price(coin.get("price"), cfg.get("crypto", {}).get("vs_currency", "usd"))
+        sym = coin.get("symbol", "?")
+        price_s = fmt_price(coin.get("price"), vs)
         chg = coin.get("change")
         chg_s = "--" if chg is None else ("▲" if chg >= 0 else "▼") + f"{abs(chg):.2f}%"
         try:
-            pw = c.d.textlength(price_s, font=f_price)
+            max_sw = max(max_sw, c.d.textlength(sym, font=f_sym))
+            max_pw = max(max_pw, c.d.textlength(price_s, font=f_price))
         except Exception:                    # noqa: BLE001
-            pw = 120
-        max_pw = max(max_pw, pw)
-        rows.append((coin, price_s, chg_s))
-    curve_x1 = right - int(max_pw) - 16     # 曲线统一终点, 不再逐行变化
+            max_sw, max_pw = max(max_sw, 70), max(max_pw, 120)
+        rows.append((coin, sym, price_s, chg_s))
+    curve_x0 = pad + int(max_sw) + 30       # 起点 = 最宽币名右侧 + 30px
+    curve_x1 = right - int(max_pw) - 30     # 终点 = 价格左侧 - 30px
 
-    for idx, (coin, price_s, chg_s) in enumerate(rows):
+    for idx, (coin, sym, price_s, chg_s) in enumerate(rows):
         row_top = y
-        l1 = row_top + 2
-        l2 = row_top + row_h - 26
-        c.text((pad, l1), coin.get("symbol", "?"), f_sym, 0)
-        c.text((right, l1), price_s, f_price, 0, anchor="ra")
-        c.text((pad, l2), coin.get("name", ""), f_name, 135)
-        c.text((right, l2), chg_s, f_chg, 60, anchor="ra")
+        line_y = row_top + row_h - 5        # 行底分隔线
+        # 主行: symbol 与价格同基线(anchor ls/rs), 底边严格对齐
+        pr_asc, pr_desc = f_price.getmetrics()[0], f_price.getmetrics()[1]
+        bl1 = row_top + 8 + pr_asc
+        c.text((pad, bl1), sym, f_sym, 0, anchor="ls")
+        c.text((right, bl1), price_s, f_price, 0, anchor="rs")
+        # 次行: 全名(左,灰) + 涨跌幅(右), 与分隔线留足间距
+        bl2 = line_y - 13
+        if bl2 - (bl1 + pr_desc) >= 4:
+            c.text((pad, bl2), coin.get("name", ""), f_name, 135, anchor="ls")
+            c.text((right, bl2), chg_s, f_chg, 60, anchor="rs")
 
         curve = coin.get("curve") or coin.get("spark") or []
-        if len(curve) > 3:
-            x0 = pad + 110                  # 曲线统一起点
-            x1 = curve_x1
-            x1 = curve_x1
-            if x1 - x0 > 60:
-                lo, hi = min(curve), max(curve)
-                rng = (hi - lo) or 1.0
-                mid_y = row_top + row_h / 2
-                sh = min(48, row_h - 30)
-                pts = [(x0 + (x1 - x0) * i / (len(curve) - 1),
+        if len(curve) > 3 and curve_x1 - curve_x0 > 60:
+            lo, hi = min(curve), max(curve)
+            rng = (hi - lo) or 1.0
+            mid_y = row_top + row_h * 0.52
+            sh = min(44, row_h - 62)
+            if sh > 14:
+                pts = [(curve_x0 + (curve_x1 - curve_x0) * i / (len(curve) - 1),
                         mid_y + sh / 2 - (v - lo) / rng * sh)
                        for i, v in enumerate(curve)]
                 c.d.line(pts, fill=95, width=2, joint="curve")
@@ -708,9 +733,7 @@ def draw_fastnews(c, rect, items, cfg, F):
     for item in items:
         tm = item.get("time") or ""
         txt = (tm + "  " + item["title"]) if tm else item.get("title", "")
-        lines = wrap(c.d, txt, f_fn, w - 8)[:2]
-        if len(lines) == 2 and len(lines[1]) > 2:
-            lines[1] = lines[1][:-1] + "…"
+        lines = fit_lines(c.d, txt, f_fn, w - 8, 2)
         for i, ln in enumerate(lines):
             c.text((x + 2, y + i * (it_h // 2)), ln, f_fn, 10)
         y += it_h
@@ -741,9 +764,7 @@ def draw_hot(c, rect, cols, cfg, F):
             if iy + hot_h > bottom:
                 break
             t = f"{ri + 1}. {it.get('title', '')}"
-            lines = wrap(c.d, t, f_hot, col_w)[: 2 if two else 1]
-            if len(lines) == 2 and len(lines[1]) > 2:
-                lines[1] = lines[1][:-1] + "…"
+            lines = fit_lines(c.d, t, f_hot, col_w, 2 if two else 1)
             for li, ln in enumerate(lines):
                 c.text((cx, iy + li * line_h), ln, f_hot, 10)
             iy += hot_h
