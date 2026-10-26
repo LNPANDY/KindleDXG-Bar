@@ -1,0 +1,7 @@
+*.png.tmp
+__pycache__/
+config.json
+cache.json
+dashboard.png
+fonts/*.otf
+fonts/*.ttf
