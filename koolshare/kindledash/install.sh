@@ -9,10 +9,11 @@ APP=/koolshare/scripts/kindledash_app
 echo_date "复制插件文件..."
 cp -rf scripts/kindledash_config.sh /koolshare/scripts/
 cp -rf scripts/kindledash_genconf.py /koolshare/scripts/
+cp -rf scripts/kindledash_confport.py /koolshare/scripts/
 cp -rf webs/Module_kindledash.asp /koolshare/webs/
 # 软件中心图标 (约定: /koolshare/res/icon-<模块名>.png)
 cp -rf icon.png /koolshare/res/icon-kindledash.png
-chmod 755 /koolshare/scripts/kindledash_config.sh /koolshare/scripts/kindledash_genconf.py
+chmod 755 /koolshare/scripts/kindledash_config.sh /koolshare/scripts/kindledash_genconf.py /koolshare/scripts/kindledash_confport.py
 
 echo_date "部署渲染程序到 /opt/kindle-dash (程序文件随插件自带)..."
 mkdir -p /opt/kindle-dash
@@ -39,8 +40,8 @@ echo_date "注册软件中心模块..."
 dbus set softcenter_module_kindledash_install=1
 dbus set softcenter_module_kindledash_title=Kindle仪表盘
 dbus set softcenter_module_kindledash_description=Kindle_DXG墨水屏副屏仪表盘配置
-dbus set softcenter_module_kindledash_version=1.2.0
-dbus set kindledash_version=1.2.0
+dbus set softcenter_module_kindledash_version=1.2.1
+dbus set kindledash_version=1.2.1
 
 # 首次安装时的默认配置(不覆盖用户已有设置)
 [ -z "$(dbus get kindledash_orientation)" ] && dbus set kindledash_orientation=portrait

@@ -87,6 +87,7 @@ function conf2obj() {
 	E("kindledash_hot1_source").value = dbus["kindledash_hot1_source"] || "weibo";
 	E("kindledash_hot2_source").value = dbus["kindledash_hot2_source"] || "bilibili";
 	E("kindledash_hot_count").value = dbus["kindledash_hot_count"] || "4";
+	E("kindledash_fn_rotate").checked = dbus["kindledash_fn_rotate"] == "1";
 	if (dbus["kindledash_version"]) E("kd_version").innerHTML = "&nbsp;-&nbsp;v" + dbus["kindledash_version"];
 	if (dbus["kindledash_envcheck"]) render_env();
 }
@@ -109,6 +110,7 @@ function build_form() {
 	for (var i = 1; i <= 5; i++) vals["kindledash_pair_src_" + i] = E("kindledash_pair_src_" + i).value;
 	for (var j = 0; j < FEEDS.length; j++)
 		vals["kindledash_feed_" + FEEDS[j][0]] = E("kindledash_feed_" + FEEDS[j][0]).checked ? "1" : "0";
+	vals["kindledash_fn_rotate"] = E("kindledash_fn_rotate").checked ? "1" : "0";
 	vals["kindledash_coins_extra"] = EXTRA.join(",");
 	$("[name^='kd_dyn_']").remove();
 	for (var k in vals) {
@@ -327,6 +329,41 @@ function validate(v) {
 		run_env(["provision"], "正在安装依赖，请勿关闭页面（约 3~10 分钟）...");
 	}
 
+	// ---------- 配置导入导出 ----------
+	function conf_export() {
+		var ts0 = dbus["kindledash_confport_ts"] || "0";
+		E("kd_conf_note").innerHTML = "<span style='color:#FC6'>正在生成备份...</span>";
+		call_api_quiet(parseInt(Math.random() * 100000000), ["export_conf"]);
+		var n = 0;
+		var timer = setInterval(function() {
+			$.ajax({
+				type: "GET", url: "/_api/kindledash", dataType: "json", cache: false, async: true,
+				success: function(d) {
+					var nd = d.result[0] || {};
+					if (nd["kindledash_confport_ts"] && nd["kindledash_confport_ts"] != ts0) {
+						clearInterval(timer);
+						dbus = nd;
+						E("kd_confport").value = nd["kindledash_confport"] || "";
+						E("kd_conf_note").innerHTML = "已生成，请全选复制上方文本保存（换路由器或重装插件后粘贴回来点『导入并应用』）";
+						show_log();
+					} else if (++n > 12) {
+						clearInterval(timer);
+						E("kd_conf_note").innerHTML = "<span style='color:#F66'>生成超时，请重试</span>";
+					}
+				},
+				error: function() { if (++n > 12) { clearInterval(timer); E("kd_conf_note").innerHTML = "<span style='color:#F66'>请求失败</span>"; } }
+			});
+		}, 1500);
+	}
+	function conf_import() {
+		var t = E("kd_confport").value.trim();
+		if (!t) { alert("请先把导出的备份文本粘贴到文本框里"); return; }
+		if (!confirm("导入将覆盖当前全部插件配置，并立即重新渲染推送，继续？")) return;
+		E("kd_conf_note").innerHTML = "<span style='color:#FC6'>正在导入并应用...</span>";
+		call_api(parseInt(Math.random() * 100000000), ["import_conf"], {kindledash_confport_in: t});
+		setTimeout(function() { get_dbus_data(); E("kd_conf_note").innerHTML = "导入完成，页面配置已刷新"; }, 15000);
+	}
+
 function show_log() {
 	$("#log_tr").show();
 	setTimeout(function(){ get_log(1); }, 300);
@@ -514,6 +551,13 @@ function get_log(flag) {
 											<th>RSS 订阅池<br><span style="font-weight:normal;font-size:11px">（source=RSS 时按顺序聚合；其它快讯源挂掉时自动兜底）</span></th>
 											<td id="feed_box"></td>
 										</tr>
+										<tr>
+											<th>渠道轮播<br><span style="font-weight:normal;font-size:11px">仅 RSS聚合 源生效。开启后每次刷新从上次消费的下一个渠道开始，某渠道新资讯不足就轮到下一个，凑满即停</span></th>
+											<td>
+												<input type="checkbox" id="kindledash_fn_rotate"> 启用轮播
+												<div class="kindle-note">轮播进度与已展示记录会记住，同一词条短期内不会重复上屏；全部渠道都无新资讯时用最新内容兜底补齐</div>
+											</td>
+										</tr>
 									</table>
 
 									<!-- 热榜 -->
@@ -553,6 +597,20 @@ function get_log(flag) {
 											<th>过程日志</th>
 											<td>
 												<textarea cols="63" rows="14" wrap="off" readonly="readonly" id="log_content" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="border:1px solid #000;width:99%; font-family:'Courier New', Courier, mono; font-size:11px;background:#000;color:#FFFFFF;"></textarea>
+											</td>
+										</tr>
+									</table>
+
+									<!-- 配置备份 -->
+									<table class="FormTable kindle-sec" width="100%" border="1" align="center" cellpadding="4" cellspacing="0" bordercolor="#6b8fa3">
+										<thead><tr><td colspan="2">配置备份（换路由器/重装插件时迁移用）</td></tr></thead>
+										<tr>
+											<th class="kindle-th">导出 / 导入</th>
+											<td>
+												<input type="button" class="button_gen" style="width:120px" onclick="conf_export();" value="导出配置">
+												<input type="button" class="button_gen" style="width:120px" onclick="conf_import();" value="导入并应用">
+												<textarea id="kd_confport" rows="3" wrap="off" spellcheck="false" style="border:1px solid #567;width:99%;margin-top:6px;font-family:'Courier New',Courier,mono;font-size:11px;" placeholder="点『导出配置』生成备份文本 → 复制保存；导入时粘贴到此处点『导入并应用』"></textarea>
+												<div id="kd_conf_note" class="kindle-note"></div>
 											</td>
 										</tr>
 									</table>

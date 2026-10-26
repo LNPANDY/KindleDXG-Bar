@@ -161,17 +161,6 @@ def load_font(path, size):
         return ImageFont.load_default()
 
 
-def fmt_wan(v):
-    """热度数字 → 万 (deterministic 字符串)"""
-    try:
-        v = float(v)
-    except (TypeError, ValueError):
-        return ""
-    if v >= 10000:
-        return f"{v / 10000:.0f}万"
-    return str(int(v)) if v else ""
-
-
 # --------------------------------------------------------------------------
 # 数据抓取: 加密货币 (binance / coingecko / gate)
 # --------------------------------------------------------------------------
@@ -398,39 +387,91 @@ def fetch_eastmoney(cfg):
     return out
 
 
-def fetch_news(cfg):
-    """自定义 RSS 池 (fastnews.feeds 或旧版顶层 feeds)"""
-    feeds = cfg.get("fastnews", {}).get("feeds") or cfg.get("feeds") or []
-    items, seen = [], set()
-    for f in feeds:
-        try:
-            raw = http_get(f["url"], timeout=10, retries=1)
-        except Exception as e:          # noqa: BLE001
-            print(f"[warn] RSS 失败 {f.get('name')}: {e}", file=sys.stderr)
-            continue
-        titles = None
-        try:
-            root = ET.fromstring(raw)
-            titles = []
-            for node in root.iter():
-                if node.tag.split("}")[-1] != "item":
-                    continue
-                for ch in node:
-                    if ch.tag.split("}")[-1] == "title":
-                        titles.append(strip_html(ch.text))
-                        break
-        except ET.ParseError:
-            # 不少中文站点的 RSS 有未转义的 & 或裸 <, XML 解析会炸,
-            # 退回正则抓 <item><title> 就够用了
-            titles = [strip_html(t.decode("utf-8", "ignore")) for t in
-                      re.findall(rb"<item[\s\S]*?<title[^>]*>([\s\S]*?)</title>",
-                                 raw, re.IGNORECASE)]
-            titles = [t for t in titles if t]
-        for title in titles:
-            if not title or title in seen:
+def _rss_titles(url):
+    """拉一个 RSS 源的标题列表 (兼容各种残破 XML)"""
+    raw = http_get(url, timeout=10, retries=1)
+    try:
+        root = ET.fromstring(raw)
+        titles = []
+        for node in root.iter():
+            if node.tag.split("}")[-1] != "item":
                 continue
-            seen.add(title)
-            items.append({"source": f.get("name", "RSS"), "title": title, "link": ""})
+            for ch in node:
+                if ch.tag.split("}")[-1] == "title":
+                    titles.append(strip_html(ch.text))
+                    break
+    except ET.ParseError:
+        # 不少中文站点的 RSS 有未转义的 & 或裸 <, XML 解析会炸,
+        # 退回正则抓 <item><title> 就够用了
+        titles = [strip_html(t.decode("utf-8", "ignore")) for t in
+                  re.findall(rb"<item[\s\S]*?<title[^>]*>([\s\S]*?)</title>",
+                             raw, re.IGNORECASE)]
+        titles = [t for t in titles if t]
+    return titles
+
+
+def fetch_news(cfg):
+    """RSS 池。fastnews.rotate=true 时启用渠道轮播:
+    - 每次刷新从「上次消费完的下一个渠道」开始 (各渠道轮流上屏)
+    - 某渠道的新词条 (近期未展示过) 不足以凑满条数 → 自动轮到下一个渠道
+    - 凑满即停; 全部轮完仍不足, 用抓到的最新词条兜底补齐 (避免开天窗)
+    - 轮播进度与已展示历史 (防重复) 存 cfg['_fn_state'], 由 main 写回缓存
+    """
+    feeds = cfg.get("fastnews", {}).get("feeds") or cfg.get("feeds") or []
+    if not feeds:
+        return []
+    need = max(1, int(cfg.get("fastnews", {}).get("count", 4)))
+    st = cfg.get("_fn_state") or {}
+    rotate = bool(cfg.get("fastnews", {}).get("rotate"))
+    history = list(st.get("history") or [])
+    hist = set(history)
+    start = int(st.get("idx", 0)) % len(feeds) if (rotate and feeds) else 0
+    order = list(range(len(feeds)))
+    order = order[start:] + order[:start]
+
+    items, seen = [], set()
+    pool_recent = []                       # 本轮抓到的全部 (title, source), 兜底用
+    consumed = 0                           # 本轮消费的渠道数 → 下次轮播起点
+    for fi in order:
+        f = feeds[fi]
+        name = f.get("name", "RSS")
+        try:
+            titles = [t for t in _rss_titles(f["url"]) if t]
+        except Exception as e:             # noqa: BLE001
+            print(f"[warn] RSS 失败 {name}: {e}", file=sys.stderr)
+            consumed += 1
+            continue
+        pool_recent.extend((t, name) for t in titles)
+        consumed += 1
+        if rotate:
+            fresh = [t for t in titles if t not in hist and t not in seen]
+            for t in fresh:
+                if len(items) >= need:
+                    break
+                seen.add(t)
+                items.append({"source": name, "title": t, "link": ""})
+            if len(items) >= need:
+                break                      # 凑满, 停止轮播
+            # 该渠道新词条不够 → 继续轮到下一个渠道
+        else:
+            for t in titles:
+                if t not in seen:
+                    seen.add(t)
+                    items.append({"source": name, "title": t, "link": ""})
+
+    if rotate and len(items) < need:
+        for t, name in pool_recent:        # 兜底补齐: 宁可重复也不开天窗
+            if len(items) >= need:
+                break
+            if t not in seen:
+                seen.add(t)
+                items.append({"source": name, "title": t, "link": ""})
+
+    if rotate:
+        history.extend(it["title"] for it in items)
+        st["history"] = history[-80:]
+        st["idx"] = (start + consumed) % len(feeds)
+        cfg["_fn_state"] = st
     return items
 
 
@@ -466,7 +507,7 @@ def fetch_weibo_hot(cfg):
         num = it.get("num")
         heat = (f"{num / 10000:.0f}万"
                 if isinstance(num, (int, float)) and num else "")
-        out.append({"title": word, "extra": it.get("label_name") or heat})
+        out.append({"title": word, "extra": it.get("label_name") or ""})
     return out
 
 
@@ -479,7 +520,7 @@ def fetch_toutiao_hot(cfg):
         t = strip_html(it.get("Title") or "")
         if not t:
             continue
-        out.append({"title": t, "extra": fmt_wan(it.get("HotValue"))})
+        out.append({"title": t})
     return out
 
 
@@ -496,9 +537,6 @@ def fetch_zhihu_hot(cfg):
             continue
         label = (it.get("card_label") or {}).get("type") or ""
         extra = _ZHIHU_LABEL.get(label, "")
-        if not extra and it.get("detail_text"):
-            m = re.search(r"([\d.]+)\s*万", str(it["detail_text"]))
-            extra = m.group(0) if m else ""
         out.append({"title": t, "extra": extra})
     return out
 
@@ -508,8 +546,7 @@ def fetch_bilibili_hot(cfg):
         "https://api.bilibili.com/x/web-interface/search/square?limit=50"
         "&open_super=0", timeout=10, retries=1, ua=UA_PHONE).decode("utf-8"))
     lst = ((d.get("data") or {}).get("trending") or {}).get("list") or []
-    return [{"title": strip_html(it.get("show_name") or it.get("keyword") or ""),
-             "extra": fmt_wan(it.get("heat_score"))}
+    return [{"title": strip_html(it.get("show_name") or it.get("keyword") or "")}
             for it in lst
             if strip_html(it.get("show_name") or it.get("keyword") or "")]
 
@@ -524,10 +561,7 @@ def fetch_baidu_hot(cfg):
                 t = strip_html(it.get("word") or "")
                 if not t:
                     continue
-                extra = fmt_wan(it.get("hotScore")) if it.get("hotScore") else ""
-                if it.get("isTop"):
-                    extra = extra or "置顶"
-                out.append({"title": t, "extra": extra})
+                out.append({"title": t, "extra": "置顶" if it.get("isTop") else ""})
     return out
 
 
@@ -539,7 +573,7 @@ def fetch_douyin_hot(cfg):
     for it in d.get("word_list") or []:
         t = strip_html(it.get("word") or "")
         if t:
-            out.append({"title": t, "extra": fmt_wan(it.get("hot_value"))})
+            out.append({"title": t})
     return out
 
 
@@ -616,24 +650,38 @@ def draw_crypto(c, rect, coins, cfg, F):
     row_h = max(56, min(116, (h - (y - rect[1])) // n))
     pad = x + 2
     right = x + w - 4
+    f_sym, f_price = F(30, True), F(36, True)
+    f_name, f_chg = F(17), F(19, True)
 
-    for idx, coin in enumerate(coins):
-        row_top = y
-        l1 = row_top + 4
-        l2 = row_top + row_h - 24
+    # 先统一量宽: 价格列取所有行的最大宽度, 曲线右边界固定 → 各行严格对齐
+    rows = []
+    max_pw = 0
+    for coin in coins:
         price_s = fmt_price(coin.get("price"), cfg.get("crypto", {}).get("vs_currency", "usd"))
         chg = coin.get("change")
         chg_s = "--" if chg is None else ("▲" if chg >= 0 else "▼") + f"{abs(chg):.2f}%"
+        try:
+            pw = c.d.textlength(price_s, font=f_price)
+        except Exception:                    # noqa: BLE001
+            pw = 120
+        max_pw = max(max_pw, pw)
+        rows.append((coin, price_s, chg_s))
+    curve_x1 = right - int(max_pw) - 16     # 曲线统一终点, 不再逐行变化
 
-        c.text((pad, l1), coin.get("symbol", "?"), F(30, True), 0)
-        c.text((right, l1), price_s, F(36, True), 0, anchor="ra")
-        c.text((pad, l2), coin.get("name", ""), F(17), 135)
-        c.text((right, l2), chg_s, F(19, True), 60, anchor="ra")
+    for idx, (coin, price_s, chg_s) in enumerate(rows):
+        row_top = y
+        l1 = row_top + 2
+        l2 = row_top + row_h - 26
+        c.text((pad, l1), coin.get("symbol", "?"), f_sym, 0)
+        c.text((right, l1), price_s, f_price, 0, anchor="ra")
+        c.text((pad, l2), coin.get("name", ""), f_name, 135)
+        c.text((right, l2), chg_s, f_chg, 60, anchor="ra")
 
-        curve = coin.get("curve") or []
+        curve = coin.get("curve") or coin.get("spark") or []
         if len(curve) > 3:
-            x0 = pad + 130
-            x1 = right - 165
+            x0 = pad + 110                  # 曲线统一起点
+            x1 = curve_x1
+            x1 = curve_x1
             if x1 - x0 > 60:
                 lo, hi = min(curve), max(curve)
                 rng = (hi - lo) or 1.0
@@ -669,34 +717,36 @@ def draw_fastnews(c, rect, items, cfg, F):
 
 
 def draw_hot(c, rect, cols, cfg, F):
-    """cols: [{'name':源名, 'items':[...]}...] 1~2 列, 单列自动通栏"""
+    """cols: [{'name':源名, 'items':[...]}...] 1~2 列, 单列自动通栏。
+    词条不显示热度数值, 标题全宽显示; 行高足够时折两行, 尽量多显示文字。"""
     x, y, w, h = rect
     if not cols:
         return
+    bottom = rect[1] + h
     c.text((x, y), cfg.get("hot_label", "热榜"), F(28, True), 60)
-    y += 42
+    y += 40
     n_rows = max(len(col["items"]) for col in cols)
     col_w = (w - 8 - 24 * (len(cols) - 1)) // len(cols)
-    hot_h = max(24, min(40, (h - (y - rect[1])) // max(1, n_rows)))
-    f_hot = F(min(24, hot_h - 6))
+    area = bottom - y - 30                          # 扣掉源名行
+    hot_h = max(26, min(62, area // max(1, n_rows)))
+    two = hot_h >= 50                               # 行高足够 → 词条折两行
+    f_hot = F(min(24, (hot_h // 2 - 4) if two else hot_h - 6))
+    line_h = f_hot.size + 6
     for ci, col in enumerate(cols):
         cx = x + ci * (col_w + 24)
-        col_right = cx + col_w
-        # 列标题: 源名
-        c.text((cx, y - 34), col.get("name", ""), F(19), 130)
+        # 源名画在矩形内部(紧贴标题下), 不再越界与上方模块重叠
+        c.text((cx, y), col.get("name", ""), F(19), 130)
+        iy = y + 30
         for ri, it in enumerate(col["items"]):
-            yy = y + ri * hot_h
-            if yy + hot_h > rect[1] + h:
+            if iy + hot_h > bottom:
                 break
-            extra = it.get("extra") or ""
-            if extra:
-                c.text((col_right, yy), extra, F(15), 150, anchor="ra")
-                tmax = col_w - (len(extra) * 11 + 14)
-            else:
-                tmax = col_w
-            t = f"{ri + 1}  {it.get('title', '')}"
-            lines = wrap(c.d, t, f_hot, tmax)
-            c.text((cx, yy), lines[0], f_hot, 10)
+            t = f"{ri + 1}. {it.get('title', '')}"
+            lines = wrap(c.d, t, f_hot, col_w)[: 2 if two else 1]
+            if len(lines) == 2 and len(lines[1]) > 2:
+                lines[1] = lines[1][:-1] + "…"
+            for li, ln in enumerate(lines):
+                c.text((cx, iy + li * line_h), ln, f_hot, 10)
+            iy += hot_h
 
 
 def render(cfg, data, stale=False, demo=False):
@@ -743,7 +793,7 @@ def render(cfg, data, stale=False, demo=False):
         need["fastnews"] = 44 + max(1, len(fastnews)) * 56
     if "hot" in modules and hot_cols:
         n_hot = max(len(col["items"]) for col in hot_cols)
-        need["hot"] = 42 + 30 + n_hot * 34
+        need["hot"] = 42 + 30 + n_hot * 40
     if not need:
         need = {"fastnews": 200}
         modules = ["fastnews"]
@@ -792,7 +842,11 @@ def render(cfg, data, stale=False, demo=False):
     if coins:
         src_parts.append("行情 " + COIN_SOURCE_NAMES.get(cfg.get("crypto", {}).get("source"), "Binance"))
     if fastnews:
-        src_parts.append("快讯 " + FASTNEWS_NAMES.get(cfg.get("fastnews", {}).get("source"), ""))
+        if fastnews[0].get("source"):       # RSS 轮播: 显示实际用到的渠道
+            used = list(dict.fromkeys(it["source"] for it in fastnews))
+            src_parts.append("快讯 " + "+".join(used[:2]) + ("等" if len(used) > 2 else ""))
+        else:
+            src_parts.append("快讯 " + FASTNEWS_NAMES.get(cfg.get("fastnews", {}).get("source"), ""))
     if hot_cols:
         src_parts.append("热榜 " + "/".join(col.get("name", "") for col in hot_cols))
     if demo:
@@ -896,6 +950,7 @@ def main():
                 cache = json.load(f)
         except Exception:                  # noqa: BLE001
             cache = {}
+    cfg["_fn_state"] = cache.get("fn_state") or {}   # 快讯轮播进度/历史
 
     stale = False
     if args.demo:
@@ -951,7 +1006,8 @@ def main():
             data = {"coins": coins, "fastnews": fastnews, "hot_cols": hot_cols}
             try:
                 with open(cache_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False)
+                    json.dump({**data, "fn_state": cfg.get("_fn_state") or {}},
+                              f, ensure_ascii=False)
             except Exception:              # noqa: BLE001
                 pass
         if not data["coins"]:

@@ -101,6 +101,7 @@ def main():
             "source": ev(env, "fn_source", "sina7x24"),
             "count": max(2, min(8, int(ev(env, "fn_count", "4") or 4))),
             "feeds": feeds,
+            "rotate": ev(env, "fn_rotate", "0") == "1",
         },
         "hot": hot or [{"source": "weibo", "count": 4}],
         "gray_levels": old.get("gray_levels", 16),

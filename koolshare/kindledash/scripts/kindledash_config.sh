@@ -243,6 +243,26 @@ doctor)
     echo "XU6J03M6" >> ${LOG_FILE}
     http_response "$1"
     ;;
+export_conf)
+    true > ${LOG_FILE}
+    echo_date "======================= Kindle 仪表盘 - 导出配置 =======================" | tee -a ${LOG_FILE}
+    CFPY=/opt/bin/python3; [ -x "${CFPY}" ] || CFPY=/usr/bin/python3
+    ${CFPY} /koolshare/scripts/kindledash_confport.py export 2>&1 | tee -a ${LOG_FILE}
+    echo "XU6J03M6" >> ${LOG_FILE}
+    http_response "$1"
+    ;;
+import_conf)
+    true > ${LOG_FILE}
+    echo_date "======================= Kindle 仪表盘 - 导入配置 =======================" | tee -a ${LOG_FILE}
+    CFPY=/opt/bin/python3; [ -x "${CFPY}" ] || CFPY=/usr/bin/python3
+    ${CFPY} /koolshare/scripts/kindledash_confport.py import 2>&1 | tee -a ${LOG_FILE}
+    gen_conf
+    re_cron
+    render_now
+    echo_date "=============================== 完成 ==================================" | tee -a ${LOG_FILE}
+    echo "XU6J03M6" >> ${LOG_FILE}
+    http_response "$1"
+    ;;
 provision)
     true > ${LOG_FILE}
     provision
