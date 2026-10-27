@@ -40,8 +40,8 @@ echo_date "注册软件中心模块..."
 dbus set softcenter_module_kindledash_install=1
 dbus set softcenter_module_kindledash_title=Kindle仪表盘
 dbus set softcenter_module_kindledash_description=Kindle_DXG墨水屏副屏仪表盘配置
-dbus set softcenter_module_kindledash_version=1.2.2
-dbus set kindledash_version=1.2.2
+dbus set softcenter_module_kindledash_version=1.2.3
+dbus set kindledash_version=1.2.3
 
 # 首次安装时的默认配置(不覆盖用户已有设置)
 [ -z "$(dbus get kindledash_orientation)" ] && dbus set kindledash_orientation=portrait

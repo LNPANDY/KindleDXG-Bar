@@ -22,4 +22,9 @@ case "$INTERVAL" in ""|*[!0-9]*) INTERVAL=15;; esac
 cru d kindle-dash 2>/dev/null
 cru a kindle-dash "*/$INTERVAL * * * * /bin/sh /opt/kindle-dash/run.sh >> $LOG 2>&1"
 
+# crond 存活守护: 本机梅林固件开机后 crond 可能不在运行(实测: 任务已注册
+# 却无进程消费, 定时刷新静默失效)。注册完检查并补启 busybox crond,
+# 它启动后会自动加载 /var/spool/cron/crontabs 里的任务
+ps w 2>/dev/null | grep -q '[c]rond' || /usr/sbin/crond -b -l 8 2>/dev/null
+
 echo "$(date +%F_%T) [kindle-dash] 自启脚本完成, cron 已注册 (每 ${INTERVAL} 分钟)" >> $LOG

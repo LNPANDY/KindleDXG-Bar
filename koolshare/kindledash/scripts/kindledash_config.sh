@@ -24,6 +24,9 @@ re_cron() {
   [ -z "${REFRESH}" ] && REFRESH=15
   cru d kindle-dash 2>/dev/null
   cru a kindle-dash "*/${REFRESH} * * * * /bin/sh /opt/kindle-dash/run.sh >> /opt/kindle-dash/run.log 2>&1"
+  # crond 存活守护: 本机 crond 可能没在运行(任务注册了却没人执行),
+  # 每次保存配置顺带自愈
+  ps w 2>/dev/null | grep -q '[c]rond' || /usr/sbin/crond -b -l 8 2>/dev/null
   echo_date "定时任务已更新: 每 ${REFRESH} 分钟刷新一次" | tee -a ${LOG_FILE}
 }
 
