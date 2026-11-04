@@ -4,7 +4,8 @@
 
 - 新增：**U 盘健康守护** `usb-guard.sh`（常驻 `/jffs/scripts/`，cron 每 2 分钟）
   - 检测：块设备是否还在 / 挂载点是否还挂着 / 文件系统是否变只读
-  - 恢复分级：`remount,rw` → 卸载 + `e2fsck -y`（240s 超时）→ 重新挂载；设备消失时先 SCSI rescan 再复位该 U 盘所在 USB 端口（`authorized 0/1`）
+  - 恢复分级：`remount,rw` → 卸载 + `e2fsck -y`（240s 超时）→ 重新挂载；设备消失时只做 SCSI rescan + mdev 软重扫
+  - **不做 USB 端口硬件复位**：开发实测 `authorized 0/1` 复位会让整机重启（路由器断网 20~40 秒），代价远大于收益；掉盘到需要硬件复位的程度时，正确做法是提示用户重新插拔
   - 恢复后自动收尾：重新 `bind /tmp/opt`、补启 crond、重注册 cron、配置 usb0、补推一屏
   - 顺带体检"盘好但环境坏"：`/opt` 绑定丢失、crond 不在、cron 任务丢失都会自动修
 - 安全设计：脚本不放在 U 盘（盘崩也要能执行）、只依赖固件 busybox + `/usr/sbin/e2fsck`、单实例锁防并发、fsck 15 分钟节流防连环跑、umount 前清占用进程、umount 失败则放弃 fsck 以免损坏文件系统

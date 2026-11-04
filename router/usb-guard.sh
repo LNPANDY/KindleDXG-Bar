@@ -35,7 +35,6 @@ LOCK=/tmp/.usbguard.lock
 STATE=/tmp/.usbguard.state          # 上次状态 + 时间戳 (tmpfs, 重启失效无妨)
 TRY=/tmp/.usbguard.try              # 上次"动手修复"的时间戳 (fsck 节流用)
 LOG=/jffs/kindle-dash-usb.log
-PORTFILE=/jffs/.usbguard.port       # 健康时记下的 U 盘 USB 端口 (如 3-1)
 MAXLOG=204800
 QUIET_SEC=1800                      # 同状态日志节流 (30 分钟)
 
@@ -109,15 +108,6 @@ set_state() {                        # set_state <VERB> <detail>
   [ -n "$_d" ] && log "[$_v] $_d"
 }
 
-# U 盘所在的 USB 端口(3-1 这种), 仅在健康时探测并缓存, 掉盘后也还能复位它
-remember_port() {
-  [ -s "$PORTFILE" ] && return 0
-  _l=$(readlink -f /sys/block/sda/device 2>/dev/null)
-  [ -n "$_l" ] || return 1
-  _p=$(echo "$_l" | sed -n 's#.*/usb[0-9]*/\([0-9]*-[0-9.]*\)/.*#\1#p')
-  [ -n "$_p" ] && echo "$_p" > "$PORTFILE"
-}
-
 do_mount() {
   mkdir -p "$MNT" 2>/dev/null
   to 30 mount -t ext3 "$DEV" "$MNT" 2>>"$LOG" && return 0
@@ -163,7 +153,10 @@ do_fsck() {
   return 0
 }
 
-# 设备节点消失: 先让 scsi 总线重扫, 再复位 U 盘所在 USB 端口
+# 设备节点消失: 只做"软重扫"(scsi rescan + mdev), 不做硬件层复位。
+# 重要教训: 曾用 authorized 0/1 复位 U 盘所在 USB 端口, 实测会让整机重启
+# (路由器断网 20~40 秒), 代价远大于收益 —— 掉盘到需要硬件复位的程度时,
+# 正确做法是提示用户重新插拔, 而不是拿整台路由器的网络去赌。
 try_reattach() {
   for d in /sys/bus/scsi/devices/*; do
     [ -f "$d/rescan" ] && echo 1 > "$d/rescan" 2>/dev/null
@@ -171,16 +164,7 @@ try_reattach() {
   command -v mdev >/dev/null 2>&1 && mdev -s 2>/dev/null
   sleep 3
   dev_ok && return 0
-
-  remember_port
-  _port=$(cat "$PORTFILE" 2>/dev/null)
-  if [ -n "$_port" ] && [ -f "/sys/bus/usb/devices/$_port/authorized" ]; then
-    log "复位 USB 端口 $_port (authorized 0/1)"
-    echo 0 > "/sys/bus/usb/devices/$_port/authorized" 2>/dev/null
-    sleep 1
-    echo 1 > "/sys/bus/usb/devices/$_port/authorized" 2>/dev/null
-    sleep 4
-  fi
+  sleep 2
   command -v mdev >/dev/null 2>&1 && mdev -s 2>/dev/null
   dev_ok
 }
@@ -229,7 +213,6 @@ trap 'rm -rf "$LOCK"' EXIT INT TERM
 rotate_log
 
 if dev_ok && mounted && rw_ok; then
-  remember_port
   # 健康: 顺带体检"盘好但附属环境坏了"的情况 —— /opt 绑定丢失、crond 不在、
   # cron 任务丢失(重启后 crontab 在 tmpfs 里会没) 都曾实测踩过
   _need=0
