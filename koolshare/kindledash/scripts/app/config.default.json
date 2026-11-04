@@ -26,5 +26,13 @@
   "hot": [
     {"source": "weibo", "count": 4},
     {"source": "toutiao", "count": 4}
-  ]
+  ],
+  "ui": {
+    "layout": "classic",
+    "font_scale": 1.0,
+    "max_coins": 5,
+    "max_fastnews": 8,
+    "max_hot": 8,
+    "news_lines": 4
+  }
 }

@@ -164,6 +164,23 @@ sh push.sh                    # 推送到 Kindle (Mac 模式: OpenSSH + 密钥)
 | `crypto.pair_sources` | `{}` | 按币覆盖来源，如 `{"PEPE": "gate"}` |
 | `fastnews.source` | `sina7x24` | `sina7x24` / `wallstcn` / `jin10` / `eastmoney` / `rss` |
 | `hot[].source` | 微博+B站 | `weibo` / `toutiao` / `zhihu` / `bilibili` / `baidu` / `douyin` |
+| `ui.layout` | `classic` | 版式方案：`classic`=方案A原版 / `large`=方案B大字（详见下节） |
+| `ui.font_scale` | `1.0` | 仅方案B：整体字号倍率 |
+| `ui.max_coins` / `max_fastnews` / `max_hot` | 5 / 8 / 8 | 仅方案B：各模块条目上限（字大就少放几条） |
+
+### 两套版式方案（可在插件页切换）
+
+同样是横版，一屏能装的信息量和"字有多大"天然冲突。所以内置两套完全独立的版式，路由器后台 **版式方案** 下拉框一键切换，点『保存并应用』立即重绘推送：
+
+| | 方案A · 原版 (`classic`) | 方案B · 大字 (`large`) |
+|---|---|---|
+| 行情 | 每币两行：`币名 + 24h曲线 + 价格` / `全称 + 涨跌幅` | 每币一行：`币名 + 短曲线 + 价格`，字号开到最大 |
+| 模块标题 | 保留（加密货币 / 财经 7×24 / 热榜 + 源名） | 全部去掉，新闻与热榜之间只一条细线 |
+| 右栏分配 | 按内容需求 | 固定权重 55% 新闻 / 45% 热榜 |
+| 条目数 | 取上游抓到的全部 | 按 `ui.max_*` 收敛，字号优先填满 |
+| 适合 | 近处看、信息量优先 | Kindle 放得远、远距离可读 |
+
+两套方案的参数互不覆盖：方案A 固定按原版字号渲染（忽略 `font_scale`），方案B 才吃 `font_scale` 与 `max_*`。
 
 ## 🌐 数据源实测
 

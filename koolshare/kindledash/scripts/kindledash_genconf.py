@@ -86,6 +86,18 @@ def main():
             hot.append({"source": s,
                         "count": max(2, min(6, int(ev(env, "hot_count", "4") or 4)))})
 
+    # 版式方案: classic=方案A(原版, 字小信息多) / large=方案B(大字, 远距离可读)
+    ui_old = old.get("ui") if isinstance(old.get("ui"), dict) else {}
+    ui = dict(ui_old)
+    layout = str(ev(env, "layout", ui.get("layout") or "classic")).strip().lower()
+    if layout not in ("classic", "large"):
+        layout = "classic"
+    ui["layout"] = layout
+    if layout == "large" and not ui_old:
+        # 第一次切到方案B时给一组"放远了看"的默认值; 之后以用户调过的为准
+        ui.update({"font_scale": 1.4, "max_coins": 5, "max_fastnews": 2,
+                   "max_hot": 4, "news_lines": 3})
+
     cfg = {
         "title": old.get("title", "每日简报"),
         "orientation": "landscape" if ev(env, "orientation", "portrait") == "landscape" else "portrait",
@@ -104,9 +116,9 @@ def main():
             "rotate": ev(env, "fn_rotate", "0") == "1",
         },
         "hot": hot or [{"source": "weibo", "count": 4}],
-        # 字号倍率/条目上限: 插件页暂无控件, 保留旧值(可手工改 config.json),
-        # 否则每次"保存并应用"都会把大字号设置冲掉
-        "ui": old.get("ui") if isinstance(old.get("ui"), dict) else {},
+        # 版式方案 + 字号倍率/条目上限。layout 来自后台下拉框; 其余键保留旧值
+        # (可在 config.json 手工微调), 否则每次"保存并应用"都会把大字设置冲掉
+        "ui": ui,
         "gray_levels": old.get("gray_levels", 16),
         "dither": old.get("dither", True),
         "font_regular": old.get("font_regular", "fonts/NotoSansCJKsc-Regular.otf"),
@@ -117,6 +129,7 @@ def main():
         json.dump(cfg, f, ensure_ascii=False, indent=2)
         f.write("\n")
     print(f"[ok] config.json 已生成: 方向={cfg['orientation']} "
+          f"版式={'方案A原版' if layout == 'classic' else '方案B大字'} "
           f"频率={cfg['refresh_minutes']}min 模块={','.join(cfg['modules'])} "
           f"币={cfg['crypto']['source']}{','.join(cfg['crypto']['pairs'])} "
           f"快讯={cfg['fastnews']['source']}(feeds:{len(feeds)}) "

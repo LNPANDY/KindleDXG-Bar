@@ -66,6 +66,7 @@ function get_dbus_data() {
 
 function conf2obj() {
 	E("kindledash_orientation").value = dbus["kindledash_orientation"] || "portrait";
+	E("kindledash_layout").value = dbus["kindledash_layout"] || "classic";
 	E("kindledash_refresh").value = dbus["kindledash_refresh"] || "15";
 	var mods = (dbus["kindledash_modules"] || "crypto,fastnews,hot").split(",");
 	E("kindledash_mod_1").value = mods[0] || "crypto";
@@ -99,6 +100,7 @@ function build_form() {
 	var form = document.form;
 	var vals = {
 		kindledash_orientation: E("kindledash_orientation").value,
+		kindledash_layout: E("kindledash_layout").value,
 		kindledash_refresh: E("kindledash_refresh").value,
 		kindledash_modules: [E("kindledash_mod_1").value, E("kindledash_mod_2").value, E("kindledash_mod_3").value].filter(function(v){return v;}).join(","),
 		kindledash_coin_source: E("kindledash_coin_source").value,
@@ -454,6 +456,18 @@ function get_log(flag) {
 													<option value="portrait">竖版（Kindle 正常竖持）</option>
 													<option value="landscape">横版（内容旋转，Kindle 顺时针横持）</option>
 												</select>
+											</td>
+										</tr>
+										<tr>
+											<th class="kindle-th">版式方案</th>
+											<td>
+												<select id="kindledash_layout" class="input_option" style="width:auto">
+													<option value="classic">方案A · 原版（信息全，字偏小）</option>
+													<option value="large">方案B · 大字（远距离阅读，条目少）</option>
+												</select>
+												<div class="kindle-note">方案A：每币两行（币名+全称+涨跌幅）、带模块标题，一屏信息量最大，适合近处看。<br>
+												方案B：每币压成一行、去掉所有标题、只留新闻与热榜一条细线分隔，自动放大字号并减少条目，适合 Kindle 放得比较远。<br>
+												切换后点『保存并应用』立即重绘推送（两套方案的条目/字号各自独立，互不覆盖）。</div>
 											</td>
 										</tr>
 										<tr>

@@ -43,6 +43,17 @@
   ],
   "_hot_note": "可选来源: weibo | toutiao | zhihu | bilibili | baidu | douyin; 一个则通栏, 两个并排双栏",
 
+  "ui": {
+    "layout": "classic",
+    "_layout_note": "classic=方案A原版(每币两行+模块标题, 信息量大, 适合近处) | large=方案B大字(每币一行、去标题、字号优先, 适合放远)。路由器后台可直接切换",
+    "font_scale": 1.0,
+    "max_coins": 5,
+    "max_fastnews": 8,
+    "max_hot": 8,
+    "news_lines": 4
+  },
+  "_ui_note": "font_scale / max_* / news_lines 仅在方案B生效; 方案A按固定字号还原原版版式",
+
   "gray_levels": 16,
   "dither": true,
 
