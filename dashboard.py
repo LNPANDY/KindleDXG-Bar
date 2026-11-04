@@ -822,37 +822,62 @@ def draw_hot(c, rect, cols, cfg, F):
     col_w = (w - 8 - int(20 * S) * (len(cols) - 1)) // len(cols)
     area = bottom - y - (0 if bare else int(30 * S))   # 竖版扣掉源名行
     if bare:
-        hot_h = max(1, area // max(1, n_rows))
-        max_lines = 3 if hot_h >= int(96 * S) else (2 if hot_h >= int(46 * S) else 1)
-        # 同样字号优先: 词条短, 两行足够, 字能开到最大
-        f_hot = pick_font_fill(hot_h, max_lines, F, S, 12, 26)
-    else:
-        hot_h = max(int(26 * S), min(int(62 * S), area // max(1, n_rows)))
-        two = hot_h >= int(50 * S)                  # 行高足够 → 词条折两行
-        # 单行时字号不超过栏宽能容纳的程度: 字太大就会早早加省略号, 反而看得少
-        cap_single = max(14, int(col_w / (11 * S)))  # 单行至少能放下约 11 个字
-        f_hot = F(min(24, (int(hot_h / S) // 2 - 4) if two else
-                      min(cap_single, int(hot_h / S) - 6)))
-        max_lines = 2 if two else 1
+        # ---- 横版: 按词条实际占高紧凑排布(不再等分高度, 单行条目不留空档) ----
+        texts = [f"{ri + 1}. {it.get('title', '')}"
+                 for col in cols for ri, it in enumerate(col["items"])]
+        best = None
+        for base in range(26, 11, -1):      # 从大到小试, 取能全部装下的最大字号
+            f = F(base)
+            lh = f.size + int(6 * S)
+            gap_v = max(2, int(lh * 0.30))
+            wrapped = [fit_lines(c.d, t, f, col_w, 2) for t in texts]
+            total = (sum(len(ls) * lh for ls in wrapped)
+                     + gap_v * max(0, len(texts) - 1))
+            if total <= area:
+                # 剩余高度均摊进行距, 但上限 0.6 行高, 避免又变成大空档
+                extra = area - total
+                if len(texts) > 1 and extra > 0:
+                    gap_v += min(extra // (len(texts) - 1), int(lh * 0.6))
+                best = (f, lh, gap_v, wrapped)
+                break
+        if not best:                        # 兜底: 最小字号 + 末尾截断
+            f = F(11)
+            lh = f.size + int(6 * S)
+            best = (f, lh, max(2, int(lh * 0.30)),
+                    [fit_lines(c.d, t, f, col_w, 2) for t in texts])
+        f_hot, line_h, gap_v, wrapped = best
+        if os.environ.get("KD_DBG"):
+            print(f"[hot] n={len(texts)} area={area} px={f_hot.size} gap={gap_v}",
+                  file=sys.stderr)
+        iy = y
+        for lines in wrapped:
+            if iy + len(lines) * line_h > bottom + 2:
+                break
+            for li, ln in enumerate(lines):
+                c.text((x + 2, iy + li * line_h), ln, f_hot, 10)
+            iy += len(lines) * line_h + gap_v
+        return
+
+    hot_h = max(int(26 * S), min(int(62 * S), area // max(1, n_rows)))
+    two = hot_h >= int(50 * S)                      # 行高足够 → 词条折两行
+    # 单行时字号不超过栏宽能容纳的程度: 字太大就会早早加省略号, 反而看得少
+    cap_single = max(14, int(col_w / (11 * S)))     # 单行至少能放下约 11 个字
+    f_hot = F(min(24, (int(hot_h / S) // 2 - 4) if two else
+                  min(cap_single, int(hot_h / S) - 6)))
+    max_lines = 2 if two else 1
     line_h = f_hot.size + int(6 * S)
-    if os.environ.get("KD_DBG"):
-        print(f"[hot] col_w={col_w} hot_h={hot_h} px={f_hot.size} max_lines={max_lines}", file=sys.stderr)
     for ci, col in enumerate(cols):
         cx = x + ci * (col_w + int(24 * S))
-        iy = y
-        if not bare:
-            # 源名画在矩形内部(紧贴标题下), 不再越界与上方模块重叠
-            c.text((cx, iy), col.get("name", ""), F(19), 130)
-            iy += int(30 * S)
+        # 源名画在矩形内部(紧贴标题下), 不再越界与上方模块重叠
+        c.text((cx, y), col.get("name", ""), F(19), 130)
+        iy = y + int(30 * S)
         for ri, it in enumerate(col["items"]):
-            if iy + hot_h > bottom + 2:
+            if iy + hot_h > bottom:
                 break
             t = f"{ri + 1}. {it.get('title', '')}"
             lines = fit_lines(c.d, t, f_hot, col_w, max_lines)
-            total = len(lines) * line_h
-            oy = iy + max(0, (hot_h - total) // 2) if bare else iy
             for li, ln in enumerate(lines):
-                c.text((cx, oy + li * line_h), ln, f_hot, 10)
+                c.text((cx, iy + li * line_h), ln, f_hot, 10)
             iy += hot_h
 
 
