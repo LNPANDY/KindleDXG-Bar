@@ -637,6 +637,19 @@ def fit_lines(c_d, text, font, max_w, max_lines):
     return lines
 
 
+def pick_font_fill(box_h, want_lines, F, S, base_min=12, base_max=32):
+    """字号优先: 在 box_h 高度里尽量塞满 want_lines 行, 选能放下的最大字号。
+    不要求文字全部装下——远距离阅读时"字大"比"字多"重要, 超长时末尾省略。"""
+    best = base_min
+    for base in range(base_min, base_max + 1):
+        f = F(base)
+        line_h = f.size + int(6 * S)
+        if line_h * want_lines > box_h + int(4 * S):
+            break
+        best = base
+    return F(best)
+
+
 class Canvas:
     def __init__(self, w, h):
         self.w, self.h = w, h
@@ -662,55 +675,75 @@ class Canvas:
 
 # ---- 各模块渲染: 都画进给定矩形 (x, y, w, h), 自己控制标题与内容 ----
 
+CURVE_W = 58          # 24h 曲线基准宽度(乘字体倍率), 短跨度即可看出走势
+# 行情单行版: 每币只占一行 → 字号可以放得很大(远距离可读), 不再有第二行小字
+F_SYM, F_PRICE = 40, 46
+
+
+def crypto_metrics(c, coins, F, vs):
+    """量出 币名 / 价格 两列的最大宽度, 用于左栏自适应宽度"""
+    max_sw = max_pw = 0
+    for coin in coins:
+        try:
+            max_sw = max(max_sw, c.d.textlength(coin.get("symbol", "?"), font=F(F_SYM, True)))
+            max_pw = max(max_pw, c.d.textlength(fmt_price(coin.get("price"), vs),
+                                                font=F(F_PRICE, True)))
+        except Exception:                    # noqa: BLE001
+            return 130, 220
+    return max_sw, max_pw
+
+
 def draw_crypto(c, rect, coins, cfg, F):
+    """单行版行情: [币名] ~~~~曲线~~~~ [价格]
+    每币一行, 没有第二行小字, 所以字号能开到很大, 远距离也看得清。"""
     x, y, w, h = rect
-    c.text((x, y), cfg.get("crypto_label", "加密货币"), F(28, True), 60)
-    y += 44
+    S = cfg.get("_scale", 1.0)
+    # 横版不画"加密货币"标题: 标签自明, 省下的高度多放一个币/把行拉高
+    if not cfg.get("_land"):
+        c.text((x, y), cfg.get("crypto_label", "加密货币"), F(28, True), 60)
+        y += int(44 * S)
     n = max(1, len(coins))
-    row_h = max(72, min(118, (h - (y - rect[1])) // n))
     pad = x + 2
     right = x + w - 4
-    f_sym, f_price = F(30, True), F(34, True)
-    f_name, f_chg = F(16), F(18, True)
+    f_sym, f_price = F(F_SYM, True), F(F_PRICE, True)
     vs = cfg.get("crypto", {}).get("vs_currency", "usd")
 
-    # 先统一量宽: symbol 列最大宽 / 价格列最大宽 → 曲线起终点所有行严格一致
     rows = []
     max_sw = max_pw = 0
     for coin in coins:
         sym = coin.get("symbol", "?")
         price_s = fmt_price(coin.get("price"), vs)
-        chg = coin.get("change")
-        chg_s = "--" if chg is None else ("▲" if chg >= 0 else "▼") + f"{abs(chg):.2f}%"
         try:
             max_sw = max(max_sw, c.d.textlength(sym, font=f_sym))
             max_pw = max(max_pw, c.d.textlength(price_s, font=f_price))
         except Exception:                    # noqa: BLE001
-            max_sw, max_pw = max(max_sw, 70), max(max_pw, 120)
-        rows.append((coin, sym, price_s, chg_s))
-    curve_x0 = pad + int(max_sw) + 30       # 起点 = 最宽币名右侧 + 30px
-    curve_x1 = right - int(max_pw) - 30     # 终点 = 价格左侧 - 30px
+            max_sw, max_pw = max(max_sw, 120), max(max_pw, 200)
+        rows.append((coin, sym, price_s))
 
-    for idx, (coin, sym, price_s, chg_s) in enumerate(rows):
-        row_top = y
-        line_y = row_top + row_h - 5        # 行底分隔线
-        # 主行: symbol 与价格同基线(anchor ls/rs), 底边严格对齐
-        pr_asc, pr_desc = f_price.getmetrics()[0], f_price.getmetrics()[1]
-        bl1 = row_top + 8 + pr_asc
-        c.text((pad, bl1), sym, f_sym, 0, anchor="ls")
-        c.text((right, bl1), price_s, f_price, 0, anchor="rs")
-        # 次行: 全名(左,灰) + 涨跌幅(右), 与分隔线留足间距
-        bl2 = line_y - 13
-        if bl2 - (bl1 + pr_desc) >= 4:
-            c.text((pad, bl2), coin.get("name", ""), f_name, 135, anchor="ls")
-            c.text((right, bl2), chg_s, f_chg, 60, anchor="rs")
+    gap = int(18 * S)
+    curve_x0 = pad + int(max_sw) + gap
+    if cfg.get("_land"):
+        curve_x1 = min(curve_x0 + int(CURVE_W * S), right - int(max_pw) - gap)
+    else:
+        curve_x1 = right - int(max_pw) - gap
+
+    area = rect[1] + h - y
+    row_h = area // n
+    asc, desc = f_price.getmetrics()
+    for idx, (coin, sym, price_s) in enumerate(rows):
+        row_top = y + idx * row_h
+        if idx and row_top + row_h > rect[1] + h + 4:
+            break
+        baseline = row_top + (row_h - (asc + desc)) // 2 + asc
+        c.text((pad, baseline), sym, f_sym, 0, anchor="ls")
+        c.text((right, baseline), price_s, f_price, 0, anchor="rs")
 
         curve = coin.get("curve") or coin.get("spark") or []
-        if len(curve) > 3 and curve_x1 - curve_x0 > 60:
+        if len(curve) > 3 and curve_x1 - curve_x0 > 50:
             lo, hi = min(curve), max(curve)
             rng = (hi - lo) or 1.0
-            mid_y = row_top + row_h * 0.52
-            sh = min(44, row_h - 62)
+            mid_y = row_top + row_h / 2
+            sh = min(54 * S, row_h * 0.55)
             if sh > 14:
                 pts = [(curve_x0 + (curve_x1 - curve_x0) * i / (len(curve) - 1),
                         mid_y + sh / 2 - (v - lo) / rng * sh)
@@ -718,24 +751,57 @@ def draw_crypto(c, rect, coins, cfg, F):
                 c.d.line(pts, fill=95, width=2, joint="curve")
                 c.d.ellipse([pts[-1][0] - 3, pts[-1][1] - 3,
                              pts[-1][0] + 3, pts[-1][1] + 3], fill=0)
-        y = row_top + row_h
         if idx < n - 1:
-            c.hline(y - 5, x0=x, x1=x + w - 4, fill=215, width=1)
+            c.hline(row_top + row_h - int(2 * S), x0=x, x1=x + w - 4, fill=215, width=1)
 
 
 def draw_fastnews(c, rect, items, cfg, F):
     x, y, w, h = rect
-    c.text((x, y), cfg.get("fastnews_label", "财经 7×24"), F(28, True), 60)
-    y += 44
+    S = cfg.get("_scale", 1.0)
+    bottom = rect[1] + h
+    # 横版不画"财经 7×24"标题: 省下的高度全部让给字号(用户要求)
+    bare = bool(cfg.get("_land"))
+    if not bare:
+        c.text((x, y), cfg.get("fastnews_label", "财经 7×24"), F(28, True), 60)
+        y += int(44 * S)
     n = max(1, len(items))
-    it_h = max(44, min(72, (h - (y - rect[1])) // n))
-    f_fn = F(min(27, it_h // 2 - 2))
+    texts = []
     for item in items:
         tm = item.get("time") or ""
-        txt = (tm + "  " + item["title"]) if tm else item.get("title", "")
-        lines = fit_lines(c.d, txt, f_fn, w - 8, 2)
+        texts.append((tm + "  " + item["title"]) if tm else item.get("title", ""))
+
+    if bare:
+        it_h = max(1, (bottom - y) // n)
+        # ui.news_lines: 每条最多几行。行数少 → 字更大但显示的字更少
+        try:
+            want = int((cfg.get("ui") or {}).get("news_lines", 4) or 4)
+        except Exception:                  # noqa: BLE001
+            want = 4
+        max_lines = max(1, min(want, 5 if n <= 2 else (4 if n <= 3 else 2)))
+        # 字号优先: 顶格取最大字号, 不再"为了全文显示把字缩小"
+        f_fn = pick_font_fill(it_h, max_lines, F, S, 14, 32)
+    else:
+        # 行高上限放宽: 条目少时应把高度让给字号/行数, 而不是留白
+        it_h = max(int(44 * S), min(int(120 * S), (h - (y - rect[1])) // n))
+        f_fn = F(min(25, int(it_h / S) // 2 - 2))
+        line_h = f_fn.size + int(6 * S)
+        # 行高够时允许折三行 → 长标题能显示完整, 不靠省略号
+        max_lines = 3 if 2 * line_h + f_fn.size <= it_h else 2
+
+    line_h = f_fn.size + int(6 * S)
+    if os.environ.get("KD_DBG"):
+        print(f"[fn] w={w} it_h={it_h} px={f_fn.size} max_lines={max_lines}", file=sys.stderr)
+    for txt in texts:
+        if y + it_h > bottom + 2:          # 防御: 行高溢出矩形就停, 不压下一模块
+            break
+        lines = fit_lines(c.d, txt, f_fn, w - 8, max_lines)
+        total = len(lines) * line_h
+        oy = y + max(0, (it_h - total) // 2) if bare else y   # 横版条目在各自格内居中
         for i, ln in enumerate(lines):
-            c.text((x + 2, y + i * (it_h // 2)), ln, f_fn, 10)
+            ly = oy + i * line_h
+            if ly + f_fn.size > bottom + 2:
+                break
+            c.text((x + 2, ly), ln, f_fn, 10)
         y += it_h
 
 
@@ -745,28 +811,48 @@ def draw_hot(c, rect, cols, cfg, F):
     x, y, w, h = rect
     if not cols:
         return
+    S = cfg.get("_scale", 1.0)
     bottom = rect[1] + h
-    c.text((x, y), cfg.get("hot_label", "热榜"), F(28, True), 60)
-    y += 40
+    # 横版不画"热榜"标题、也不画"微博"源名: 只留内容, 高度全给字号
+    bare = bool(cfg.get("_land"))
+    if not bare:
+        c.text((x, y), cfg.get("hot_label", "热榜"), F(28, True), 60)
+        y += int(40 * S)
     n_rows = max(len(col["items"]) for col in cols)
-    col_w = (w - 8 - 24 * (len(cols) - 1)) // len(cols)
-    area = bottom - y - 30                          # 扣掉源名行
-    hot_h = max(26, min(62, area // max(1, n_rows)))
-    two = hot_h >= 50                               # 行高足够 → 词条折两行
-    f_hot = F(min(24, (hot_h // 2 - 4) if two else hot_h - 6))
-    line_h = f_hot.size + 6
+    col_w = (w - 8 - int(20 * S) * (len(cols) - 1)) // len(cols)
+    area = bottom - y - (0 if bare else int(30 * S))   # 竖版扣掉源名行
+    if bare:
+        hot_h = max(1, area // max(1, n_rows))
+        max_lines = 3 if hot_h >= int(96 * S) else (2 if hot_h >= int(46 * S) else 1)
+        # 同样字号优先: 词条短, 两行足够, 字能开到最大
+        f_hot = pick_font_fill(hot_h, max_lines, F, S, 12, 26)
+    else:
+        hot_h = max(int(26 * S), min(int(62 * S), area // max(1, n_rows)))
+        two = hot_h >= int(50 * S)                  # 行高足够 → 词条折两行
+        # 单行时字号不超过栏宽能容纳的程度: 字太大就会早早加省略号, 反而看得少
+        cap_single = max(14, int(col_w / (11 * S)))  # 单行至少能放下约 11 个字
+        f_hot = F(min(24, (int(hot_h / S) // 2 - 4) if two else
+                      min(cap_single, int(hot_h / S) - 6)))
+        max_lines = 2 if two else 1
+    line_h = f_hot.size + int(6 * S)
+    if os.environ.get("KD_DBG"):
+        print(f"[hot] col_w={col_w} hot_h={hot_h} px={f_hot.size} max_lines={max_lines}", file=sys.stderr)
     for ci, col in enumerate(cols):
-        cx = x + ci * (col_w + 24)
-        # 源名画在矩形内部(紧贴标题下), 不再越界与上方模块重叠
-        c.text((cx, y), col.get("name", ""), F(19), 130)
-        iy = y + 30
+        cx = x + ci * (col_w + int(24 * S))
+        iy = y
+        if not bare:
+            # 源名画在矩形内部(紧贴标题下), 不再越界与上方模块重叠
+            c.text((cx, iy), col.get("name", ""), F(19), 130)
+            iy += int(30 * S)
         for ri, it in enumerate(col["items"]):
-            if iy + hot_h > bottom:
+            if iy + hot_h > bottom + 2:
                 break
             t = f"{ri + 1}. {it.get('title', '')}"
-            lines = fit_lines(c.d, t, f_hot, col_w, 2 if two else 1)
+            lines = fit_lines(c.d, t, f_hot, col_w, max_lines)
+            total = len(lines) * line_h
+            oy = iy + max(0, (hot_h - total) // 2) if bare else iy
             for li, ln in enumerate(lines):
-                c.text((cx, iy + li * line_h), ln, f_hot, 10)
+                c.text((cx, oy + li * line_h), ln, f_hot, 10)
             iy += hot_h
 
 
@@ -779,8 +865,23 @@ def render(cfg, data, stale=False, demo=False):
     else:
         cw, ch = min(dw, dh), max(dw, dh)      # 竖版 824x1200
 
+    ui = cfg.get("ui") or {}
+    S = float(ui.get("font_scale", 1.0) or 1.0)
+    S = max(0.8, min(2.2, S))
+    cfg["_scale"] = S
+    cfg["_land"] = land
+
     f_reg, f_bold = cfg.get("_font_reg"), cfg.get("_font_bold")
-    F = lambda size, bold=False: load_font(f_bold if bold else f_reg, size)  # noqa: E731
+    F = lambda size, bold=False: load_font(f_bold if bold else f_reg,  # noqa: E731
+                                           max(9, int(round(size * S))))
+
+    # 字号放大后必须少放几条, 否则挤成一团 (条目上限可在 config.ui 里调)
+    def _lim(key, items, dflt):
+        try:
+            m = int(ui.get(key, dflt))
+        except Exception:                  # noqa: BLE001
+            m = dflt
+        return items[:max(1, m)] if m > 0 else items
 
     c = Canvas(cw, ch)
     pad = c.pad
@@ -791,56 +892,88 @@ def render(cfg, data, stale=False, demo=False):
     # ---- 页眉 ----
     top = int(ch * 0.030)
     c.text((pad, top), cfg.get("title", "每日简报"), F(46, True), 0)
-    c.text((right, top + 2), now.strftime("%H:%M"), F(34, True), 0, anchor="ra")
-    c.text((right, top + 46), now.strftime("%Y-%m-%d") + f"  星期{weekday_cn}",
+    c.text((right, top + int(2 * S)), now.strftime("%H:%M"), F(34, True), 0, anchor="ra")
+    c.text((right, top + int(46 * S)), now.strftime("%Y-%m-%d") + f"  星期{weekday_cn}",
            F(20), 90, anchor="ra")
-    y = top + 88
-    c.hline(y, fill=0, width=3)
-    y += 16
+    y = top + int(88 * S)
+    c.hline(y, fill=0, width=max(2, int(3 * S)))
+    y += int(16 * S)
 
-    footer_top = ch - int(ch * 0.045)
+    # 页脚: 先按字体高度算基线位置, 保证文字底部不贴图像边缘(以前会切掉半行)
+    foot_sz = max(9, int(round(18 * S)))
+    fy = ch - foot_sz - int(12 * S)
+    hline_fy = fy - int(9 * S)
+    footer_top = hline_fy - int(8 * S)
     avail = footer_top - y
     modules = [m for m in cfg.get("modules", ["crypto", "fastnews", "hot"])
                if m in ("crypto", "fastnews", "hot")]
 
     # ---- 各模块需要的高度 → 按比例分 ----
-    coins = data.get("coins") or []
-    fastnews = data.get("fastnews") or []
+    coins = _lim("max_coins", data.get("coins") or [], 5)
+    fastnews = _lim("max_fastnews", data.get("fastnews") or [], 8)
     hot_cols = data.get("hot_cols") or []
+    hm = int(ui.get("max_hot", 8) or 8)
+    hot_cols = [dict(col, items=col["items"][:max(1, hm)]) for col in hot_cols]
+    # 绘制必须用裁剪后的数据, 否则会按全量内容画从而溢出矩形/压住其他模块
+    data = dict(data, coins=coins, fastnews=fastnews, hot_cols=hot_cols)
     need = {}
     if "crypto" in modules:
-        need["crypto"] = 44 + max(1, len(coins)) * 78
+        need["crypto"] = int(44 * S) + max(1, len(coins)) * int(96 * S)
     if "fastnews" in modules:
-        need["fastnews"] = 44 + max(1, len(fastnews)) * 56
+        need["fastnews"] = int(44 * S) + max(1, len(fastnews)) * int(56 * S)
     if "hot" in modules and hot_cols:
         n_hot = max(len(col["items"]) for col in hot_cols)
-        need["hot"] = 42 + 30 + n_hot * 40
+        need["hot"] = int(42 * S) + int(30 * S) + n_hot * int(40 * S)
     if not need:
         need = {"fastnews": 200}
         modules = ["fastnews"]
-    scale = min(1.6, avail / sum(need.values()))
-    gaps = 18 * (len(need) - 1)
+    gaps = int(18 * S) * (len(need) - 1)
     scale = min(1.6, (avail - gaps) / sum(need.values()))
 
     # ---- 版式: 竖版纵向堆叠; 横版第一模块占左半列, 其余堆右半列 ----
     if land:
+        # 左列宽度按内容实测: symbol + 短曲线 + 价格 刚好排满, 不浪费中间空白,
+        # 省下的宽度全部给右栏新闻(换行更宽、标题更少被截断)
+        gap = int(18 * S)
         left_w = int(cw * 0.44)
-        rects = {}
         rest = [m for m in modules if m in need]
         first = rest[0] if rest else None
+        if first == "crypto" and coins:
+            vs = cfg.get("crypto", {}).get("vs_currency", "usd")
+            max_sw, max_pw = crypto_metrics(c, coins, F, vs)
+            need_w = int(max_sw + gap + CURVE_W * S + gap + max_pw) + int(16 * S)
+            left_w = max(int(cw * 0.30), min(int(cw * 0.50), need_w))
+        rects = {}
         if first:
             # 左列模块撑满整列高度(行情行会自动拉高填满)
             rects[first] = (pad, y, left_w, avail)
         if len(rest) > 1:
-            rx = pad + left_w + int(cw * 0.035)
+            rx = pad + left_w + int(cw * 0.028)
             rw = right - rx
             ry = y
-            rh_total = footer_top - y
-            tot = sum(need[m] for m in rest[1:])
-            for m in rest[1:]:
-                rh = int((need[m] / tot) * rh_total) if tot else 0
-                rects[m] = (rx, ry, rw, rh)
-                ry += rh + 14
+            inner_gap = int(14 * S)
+            # 必须扣掉模块间距, 否则最后一块会越过分隔线压到页脚
+            rh_total = footer_top - y - inner_gap * (len(rest) - 2)
+            # 高度按权重分, 不按"内容需求"分: 资讯是阅读主体, 固定拿大头,
+            # 这样条数少的时候字号真的会变大(按需求分则永远填满、字号不变)
+            wts = {"fastnews": 0.60, "hot": 0.40}
+            if len(rest[1:]) == 2:                  # 右栏正好两块时按权重; 更多块退回按需求
+                tw = sum(wts.get(m, 1) for m in rest[1:]) or 1
+                for m in rest[1:]:
+                    rh = int(rh_total * wts.get(m, 1) / tw)
+                    rects[m] = (rx, ry, rw, rh)
+                    ry += rh + inner_gap
+                # 两块内容之间只画一条细线分隔(标题/源名都已去掉)
+                a, b = rest[1], rest[2]
+                if a in rects and b in rects:
+                    ly = rects[b][1] - inner_gap // 2
+                    c.hline(ly, x0=rx, x1=right, fill=150, width=2)
+            else:
+                tot = sum(need[m] for m in rest[1:])
+                for m in rest[1:]:
+                    rh = int((need[m] / tot) * rh_total) if tot else 0
+                    rects[m] = (rx, ry, rw, rh)
+                    ry += rh + inner_gap
         for m in modules:
             if m in rects:
                 _draw_module(c, m, rects[m], data, cfg, F, land)
@@ -854,11 +987,10 @@ def render(cfg, data, stale=False, demo=False):
             if rh < 60:
                 break
             _draw_module(c, m, (pad, ry, cw - 2 * pad, rh), data, cfg, F, land)
-            ry += rh + 18
+            ry += rh + int(18 * S)
 
     # ---- 页脚 ----
-    fy = ch - int(ch * 0.026)
-    c.hline(fy - int(ch * 0.017), fill=205, width=1)
+    c.hline(hline_fy, fill=205, width=1)
     src_parts = []
     if coins:
         src_parts.append("行情 " + COIN_SOURCE_NAMES.get(cfg.get("crypto", {}).get("source"), "Binance"))
@@ -937,6 +1069,21 @@ def _normalize_cfg(cfg):
         cfg["orientation"] = "landscape" if cfg.get("landscape") else "portrait"
     if not cfg.get("modules"):
         cfg["modules"] = ["crypto", "fastnews", "hot"]
+
+    # 显示密度: 字体倍率 + 每模块条目上限 (放大字号就少放几条)
+    ui = cfg.get("ui") if isinstance(cfg.get("ui"), dict) else {}
+    ui = dict(ui)
+    try:
+        ui["font_scale"] = max(0.8, min(2.2, float(ui.get("font_scale", 1.0))))
+    except Exception:                      # noqa: BLE001
+        ui["font_scale"] = 1.0
+    for k, dv, lo, hi in (("max_coins", 5, 1, 8), ("max_fastnews", 8, 1, 12),
+                          ("max_hot", 8, 1, 12)):
+        try:
+            ui[k] = max(lo, min(hi, int(ui.get(k, dv))))
+        except Exception:                  # noqa: BLE001
+            ui[k] = dv
+    cfg["ui"] = ui
     return cfg
 
 
@@ -947,6 +1094,11 @@ def main():
     ap.add_argument("--demo", action="store_true", help="用假数据渲染, 不联网")
     ap.add_argument("--offline", action="store_true", help="用上次缓存渲染")
     ap.add_argument("--landscape", action="store_true", help="强制横版输出")
+    ap.add_argument("--scale", type=float, default=None,
+                    help="字体倍率 (1.0 标准, 1.3 大字, 1.6 更大, 2.0 超大)")
+    ap.add_argument("--coins", type=int, default=None, help="行情最多显示几个币")
+    ap.add_argument("--news", type=int, default=None, help="快讯最多显示几条")
+    ap.add_argument("--hot", type=int, default=None, help="热榜每列最多显示几条")
     args = ap.parse_args()
 
     cfg = {}
@@ -955,6 +1107,17 @@ def main():
             cfg = json.load(f)
     if args.landscape:
         cfg["orientation"] = "landscape"
+    ui = cfg.get("ui") if isinstance(cfg.get("ui"), dict) else {}
+    ui = dict(ui)
+    if args.scale is not None:
+        ui["font_scale"] = args.scale
+    if args.coins is not None:
+        ui["max_coins"] = args.coins
+    if args.news is not None:
+        ui["max_fastnews"] = args.news
+    if args.hot is not None:
+        ui["max_hot"] = args.hot
+    cfg["ui"] = ui
     cfg = _normalize_cfg(cfg)
 
     cfg["_font_reg"] = find_font("font_regular", cfg)
@@ -983,9 +1146,16 @@ def main():
                          for h in cfg["hot"]],
         }
     elif args.offline:
+        # 离线预览也要尊重当前配置: 只取配置里选中的热榜源/条数, 否则改了源预览不变
+        want = [(h["source"], int(h.get("count", 4))) for h in cfg["hot"]]
+        cached = {c.get("source"): c for c in (cache.get("hot_cols") or [])}
+        hot_cols = []
+        for src, cnt in want:
+            if src in cached:
+                hot_cols.append(dict(cached[src], items=cached[src]["items"][:max(1, cnt)]))
         data = {"coins": cache.get("coins") or DEMO_COINS,
                 "fastnews": cache.get("fastnews") or [],
-                "hot_cols": cache.get("hot_cols") or []}
+                "hot_cols": hot_cols}
         stale = True
     else:
         # ---- 行情 (支持按币分源) ----

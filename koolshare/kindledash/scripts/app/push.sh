@@ -9,6 +9,10 @@
 # ============================================================================
 DIR=$(cd "$(dirname "$0")" && pwd)
 
+# 同 run.sh: 清掉 crond 继承来的 LD_LIBRARY_PATH, 否则 Entware python3
+# (HTTP 传输服务) 会加载固件老 glibc 崩溃
+unset LD_LIBRARY_PATH
+
 IMG="${1:-$DIR/dashboard.png}"
 KINDLE_IP="${KINDLE_IP:-192.168.2.2}"
 KINDLE_USER="${KINDLE_USER:-root}"

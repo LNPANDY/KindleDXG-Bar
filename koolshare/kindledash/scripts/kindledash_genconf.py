@@ -104,6 +104,9 @@ def main():
             "rotate": ev(env, "fn_rotate", "0") == "1",
         },
         "hot": hot or [{"source": "weibo", "count": 4}],
+        # 字号倍率/条目上限: 插件页暂无控件, 保留旧值(可手工改 config.json),
+        # 否则每次"保存并应用"都会把大字号设置冲掉
+        "ui": old.get("ui") if isinstance(old.get("ui"), dict) else {},
         "gray_levels": old.get("gray_levels", 16),
         "dither": old.get("dither", True),
         "font_regular": old.get("font_regular", "fonts/NotoSansCJKsc-Regular.otf"),

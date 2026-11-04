@@ -8,6 +8,19 @@
 # ============================================================================
 LOG=/opt/kindle-dash/run.log
 
+# Entware 挂载自愈: 重启后 post-mount 未跑/未生效时 /opt 会整路径失效
+# (实测: /tmp/opt 不存在 → /opt/kindle-dash 与 /opt/bin/python3 全部"消失",
+#  定时任务静默失败)。这里兜底扫描 U 盘挂载点并 bind 到 /tmp/opt
+if [ ! -d /opt/kindle-dash ]; then
+  for m in /tmp/mnt/*; do
+    if [ -x "$m/etc/init.d/rc.unslung" ]; then
+      mkdir -p /tmp/opt
+      mount | grep -q "on /tmp/opt " || mount -o bind "$m" /tmp/opt
+      break
+    fi
+  done
+fi
+
 # usb0 若已枚举(开机时 Kindle 已插在 USB 口)则配置 IP; 没插也不要紧,
 # run.sh 每次运行都会自愈
 if ifconfig usb0 >/dev/null 2>&1; then

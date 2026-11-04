@@ -6,6 +6,12 @@
 DIR=$(cd "$(dirname "$0")" && pwd)
 cd "$DIR" || exit 1
 
+# 关键: 路由器 crond 环境自带 LD_LIBRARY_PATH=/lib:/usr/lib:/lib/aarch64,
+# cron 任务继承后 Entware 的 python3 会去加载固件老 glibc, 报
+# "GLIBC_2.26/2.27 not found" 直接崩溃(手动 ssh 跑却正常, 极易误判)。
+# 必须在这里清掉, 否则定时刷新全部静默失败。
+unset LD_LIBRARY_PATH
+
 # 路由器环境: Entware 路径 + python3 定位
 export PATH="/opt/bin:/opt/sbin:$PATH"
 if [ -x /opt/bin/python3 ]; then PY="/opt/bin/python3"; else PY="${PY:-python3}"; fi

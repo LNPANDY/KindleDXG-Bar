@@ -84,8 +84,10 @@ function conf2obj() {
 		var k = "kindledash_feed_" + FEEDS[j][0];
 		E(k).checked = dbus[k] == "1";
 	}
-	E("kindledash_hot1_source").value = dbus["kindledash_hot1_source"] || "weibo";
-	E("kindledash_hot2_source").value = dbus["kindledash_hot2_source"] || "bilibili";
+	// 热榜槽位允许"关闭"(空字符串), 不能用 || 兜底, 否则关掉的第二栏会被强行改回 B 站
+	var kdHas = function (k) { return Object.prototype.hasOwnProperty.call(dbus, k); };
+	E("kindledash_hot1_source").value = kdHas("kindledash_hot1_source") ? dbus["kindledash_hot1_source"] : "weibo";
+	E("kindledash_hot2_source").value = kdHas("kindledash_hot2_source") ? dbus["kindledash_hot2_source"] : "bilibili";
 	E("kindledash_hot_count").value = dbus["kindledash_hot_count"] || "4";
 	E("kindledash_fn_rotate").checked = dbus["kindledash_fn_rotate"] == "1";
 	if (dbus["kindledash_version"]) E("kd_version").innerHTML = "&nbsp;-&nbsp;v" + dbus["kindledash_version"];
