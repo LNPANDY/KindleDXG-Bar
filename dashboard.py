@@ -825,19 +825,21 @@ def draw_hot(c, rect, cols, cfg, F):
         # ---- 横版: 按词条实际占高紧凑排布(不再等分高度, 单行条目不留空档) ----
         texts = [f"{ri + 1}. {it.get('title', '')}"
                  for col in cols for ri, it in enumerate(col["items"])]
+        # 给页脚上方留一点余量, 免得最后一条贴着分隔线
+        area = area - int(6 * S)
         best = None
-        for base in range(26, 11, -1):      # 从大到小试, 取能全部装下的最大字号
+        for base in range(28, 11, -1):      # 从大到小试, 取能全部装下的最大字号
             f = F(base)
             lh = f.size + int(6 * S)
-            gap_v = max(2, int(lh * 0.30))
+            gap_v = max(3, int(lh * 0.20))
             wrapped = [fit_lines(c.d, t, f, col_w, 2) for t in texts]
             total = (sum(len(ls) * lh for ls in wrapped)
                      + gap_v * max(0, len(texts) - 1))
             if total <= area:
-                # 剩余高度均摊进行距, 但上限 0.6 行高, 避免又变成大空档
+                # 剩余高度优先留给字号(循环取最大), 只把少量余量补给行距
                 extra = area - total
                 if len(texts) > 1 and extra > 0:
-                    gap_v += min(extra // (len(texts) - 1), int(lh * 0.6))
+                    gap_v += min(extra // (len(texts) - 1), int(lh * 0.25))
                 best = (f, lh, gap_v, wrapped)
                 break
         if not best:                        # 兜底: 最小字号 + 末尾截断
@@ -981,7 +983,7 @@ def render(cfg, data, stale=False, demo=False):
             rh_total = footer_top - y - inner_gap * (len(rest) - 2)
             # 高度按权重分, 不按"内容需求"分: 资讯是阅读主体, 固定拿大头,
             # 这样条数少的时候字号真的会变大(按需求分则永远填满、字号不变)
-            wts = {"fastnews": 0.60, "hot": 0.40}
+            wts = {"fastnews": 0.55, "hot": 0.45}
             if len(rest[1:]) == 2:                  # 右栏正好两块时按权重; 更多块退回按需求
                 tw = sum(wts.get(m, 1) for m in rest[1:]) or 1
                 for m in rest[1:]:
