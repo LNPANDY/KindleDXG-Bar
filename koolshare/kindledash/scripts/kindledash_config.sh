@@ -246,6 +246,25 @@ doctor)
     echo "XU6J03M6" >> ${LOG_FILE}
     http_response "$1"
     ;;
+usbguard)
+    true > ${LOG_FILE}
+    echo_date "======================= U 盘守护 - 立即检测 =======================" | tee -a ${LOG_FILE}
+    # 守护脚本常驻 /jffs (U 盘崩了也要能跑), 不依赖 /opt
+    if [ -x /jffs/scripts/usb-guard.sh ] || [ -f /jffs/scripts/usb-guard.sh ]; then
+      /bin/sh /jffs/scripts/usb-guard.sh
+      UG_RC=$?
+      case ${UG_RC} in
+        0) echo_date "✓ U 盘正常: $(dbus get kindledash_usbguard)" ;;
+        1) echo_date "✓ 检测到异常并已自动修复: $(dbus get kindledash_usbguard)" ;;
+        *) echo_date "✗ 无法自动恢复: $(dbus get kindledash_usbguard) —— 可能需要重新插拔或更换 U 盘" ;;
+      esac
+      echo_date "详细记录: /jffs/kindle-dash-usb.log" | tee -a ${LOG_FILE}
+    else
+      echo_date "✗ 未找到 /jffs/scripts/usb-guard.sh, 请重新安装插件" | tee -a ${LOG_FILE}
+    fi
+    echo "XU6J03M6" >> ${LOG_FILE}
+    http_response "$1"
+    ;;
 export_conf)
     true > ${LOG_FILE}
     echo_date "======================= Kindle 仪表盘 - 导出配置 =======================" | tee -a ${LOG_FILE}

@@ -5,6 +5,10 @@ source /koolshare/scripts/base.sh
 rm -f /koolshare/scripts/kindledash_config.sh
 rm -f /koolshare/scripts/kindledash_genconf.py
 rm -f /koolshare/webs/Module_kindledash.asp
+# U 盘守护: cron + jffs 上的脚本
+cru d usb-guard 2>/dev/null
+rm -f /jffs/scripts/usb-guard.sh
+rm -f /jffs/kindle-dash-usb.log /jffs/.usbguard.port
 
 for key in $(dbus | grep "^kindledash_" | sed 's/=.*//'); do
   dbus remove ${key}

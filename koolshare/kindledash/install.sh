@@ -36,12 +36,20 @@ APPEND
 fi
 /jffs/scripts/kindle-dash-start.sh >/dev/null 2>&1
 
+echo_date "部署 U 盘守护 (常驻 /jffs, 不依赖 U 盘)..."
+if [ -s ${APP}/usb-guard.sh ]; then
+  cp -f ${APP}/usb-guard.sh /jffs/scripts/usb-guard.sh
+  chmod +x /jffs/scripts/usb-guard.sh
+  cru d usb-guard 2>/dev/null
+  cru a usb-guard "*/2 * * * * /bin/sh /jffs/scripts/usb-guard.sh >/dev/null 2>&1"
+fi
+
 echo_date "注册软件中心模块..."
 dbus set softcenter_module_kindledash_install=1
 dbus set softcenter_module_kindledash_title=Kindle仪表盘
 dbus set softcenter_module_kindledash_description=Kindle_DXG墨水屏副屏仪表盘配置
-dbus set softcenter_module_kindledash_version=1.2.4
-dbus set kindledash_version=1.2.4
+dbus set softcenter_module_kindledash_version=1.2.5
+dbus set kindledash_version=1.2.5
 
 # 首次安装时的默认配置(不覆盖用户已有设置)
 [ -z "$(dbus get kindledash_orientation)" ] && dbus set kindledash_orientation=portrait

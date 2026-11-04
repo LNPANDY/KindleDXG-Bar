@@ -93,6 +93,7 @@ function conf2obj() {
 	E("kindledash_fn_rotate").checked = dbus["kindledash_fn_rotate"] == "1";
 	if (dbus["kindledash_version"]) E("kd_version").innerHTML = "&nbsp;-&nbsp;v" + dbus["kindledash_version"];
 	if (dbus["kindledash_envcheck"]) render_env();
+	render_usb();
 }
 
 function build_form() {
@@ -327,8 +328,48 @@ function validate(v) {
 			});
 		}, 5000);
 	}
-	function env_check() { run_env(["doctor"], "正在自检环境（约 10 秒）..."); }
-	function env_provision() {
+	// ---------- U 盘守护 ----------
+	// 状态来自 dbus kindledash_usbguard: "OK 03:12" / "FIXED:fsck 03:12" / "DOWN 03:12"
+	function render_usb() {
+		var el = E("kd_usb_state");
+		if (!el) return;
+		var s = dbus["kindledash_usbguard"] || "";
+		if (!s) {
+			el.innerHTML = "<span style='color:#999'>尚未检测（守护脚本每 2 分钟自动巡检一次）</span>";
+			return;
+		}
+		var col = "#3C3", tail = "";
+		if (s.indexOf("OK") === 0) { col = "#3C3"; }
+		else if (s.indexOf("FIXED") === 0) { col = "#FC6"; tail = " <span style='color:#999'>（已自动修复，下次巡检确认无碍后转正常）</span>"; }
+		else { col = "#F66"; tail = " <span style='color:#F99'>（无法自动恢复：请检查 U 盘是否插好/是否需更换；换好后点『立即检测』）</span>"; }
+		el.innerHTML = "<span style='color:" + col + ";font-weight:bold'>" + s + "</span>" + tail;
+	}
+
+	function usb_check() {
+		var old = dbus["kindledash_usbguard"] || "";
+		E("kd_usb_state").innerHTML = "<span style='color:#FC6'>正在检测 U 盘（若遇坏道会自动 fsck，可能耗时 1~3 分钟）...</span>";
+		call_api_quiet(parseInt(Math.random() * 100000000), ["usbguard"]);
+		var n = 0;
+		var timer = setInterval(function() {
+			$.ajax({
+				type: "GET", url: "/_api/kindledash", dataType: "json", cache: false, async: true,
+				success: function(d) {
+					var nd = d.result[0] || {};
+					n++;
+					var cur = nd["kindledash_usbguard"] || "";
+					if ((cur && cur != old) || n >= 20) {
+						clearInterval(timer);
+						dbus = nd;
+						render_usb();
+						if (cur && cur != old) show_log();
+					}
+				},
+				error: function() { if (n++ >= 20) clearInterval(timer); }
+			});
+		}, 3000);
+	}
+
+	function env_check() { run_env(["doctor"], "正在自检环境（约 10 秒）..."); }	function env_provision() {
 		if (!confirm("将自动安装缺失的依赖（Entware→Python→Pillow→字体→定时任务），首次约 3~10 分钟。\n\n注意：Entware 需要 U 盘已格式化为 ext2/3/4 分区（amtm 或 USB应用插件可完成，会清空 U 盘数据）。\n\n继续？")) return;
 		run_env(["provision"], "正在安装依赖，请勿关闭页面（约 3~10 分钟）...");
 	}
@@ -442,6 +483,14 @@ function get_log(flag) {
 												<input type="button" class="button_gen" style="width:90px" onclick="env_check();" value="环境自检">
 												<input type="button" class="button_gen" style="width:120px" onclick="env_provision();" value="一键安装依赖">
 												<div id="kd_env_result" style="font-size:12px;margin-top:6px;line-height:1.7"></div>
+											</td>
+										</tr>
+										<tr>
+											<th class="kindle-th">U 盘守护<br><span style="font-weight:normal;font-size:11px">每 2 分钟自检：掉盘 / 变只读 / 文件系统错误</span></th>
+											<td>
+												<input type="button" class="button_gen" style="width:90px" onclick="usb_check();" value="立即检测">
+												<div id="kd_usb_state" style="font-size:12px;margin-top:6px;line-height:1.7"></div>
+												<div class="kindle-note">守护脚本常驻 /jffs（不依赖 U 盘本身），检测到掉盘/只读/挂载丢失会自动：重新挂载 → 必要时卸载并 e2fsck 修复 → 恢复 /opt 绑定与定时任务 → 补推一屏。日志：/jffs/kindle-dash-usb.log</div>
 											</td>
 										</tr>
 									</table>

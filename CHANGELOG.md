@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.2.5 (2026-11-05)
+
+- 新增：**U 盘健康守护** `usb-guard.sh`（常驻 `/jffs/scripts/`，cron 每 2 分钟）
+  - 检测：块设备是否还在 / 挂载点是否还挂着 / 文件系统是否变只读
+  - 恢复分级：`remount,rw` → 卸载 + `e2fsck -y`（240s 超时）→ 重新挂载；设备消失时先 SCSI rescan 再复位该 U 盘所在 USB 端口（`authorized 0/1`）
+  - 恢复后自动收尾：重新 `bind /tmp/opt`、补启 crond、重注册 cron、配置 usb0、补推一屏
+  - 顺带体检"盘好但环境坏"：`/opt` 绑定丢失、crond 不在、cron 任务丢失都会自动修
+- 安全设计：脚本不放在 U 盘（盘崩也要能执行）、只依赖固件 busybox + `/usr/sbin/e2fsck`、单实例锁防并发、fsck 15 分钟节流防连环跑、umount 前清占用进程、umount 失败则放弃 fsck 以免损坏文件系统
+- 可写检测改为"读挂载选项为主 + 每 30 分钟真写一次"，避免 7×24 每 2 分钟写 U 盘磨损闪存
+- 插件页『运行环境』新增「U 盘守护」：显示 `OK / FIXED:mount|fsck|env / DOWN` 状态与『立即检测』按钮（`kindledash_config.sh usbguard`）
+- 日志 `/jffs/kindle-dash-usb.log`（>200KB 自动截尾）；状态写 dbus `kindledash_usbguard`，仅在状态变化时写，避免频繁磨损 nvram
+- install/uninstall 一并部署与清理守护脚本；插件版本号 1.2.5
+
+
 ## v1.2.4 (2026-11-05)
 
 - 新增：**两套版式方案，路由器后台一键切换**（`ui.layout`）
