@@ -18,7 +18,7 @@ chmod 755 /koolshare/scripts/kindledash_config.sh /koolshare/scripts/kindledash_
 echo_date "部署渲染程序到 /opt/kindle-dash (程序文件随插件自带)..."
 mkdir -p /opt/kindle-dash
 # 程序文件每次安装都更新为插件内置版本; 用户配置只在首次写入
-for x in dashboard.py run.sh push.sh; do
+for x in dashboard.py run.sh push.sh usb-guard.sh; do
   [ -s ${APP}/${x} ] && cp -f ${APP}/${x} /opt/kindle-dash/${x}
 done
 chmod +x /opt/kindle-dash/run.sh /opt/kindle-dash/push.sh 2>/dev/null
@@ -48,8 +48,8 @@ echo_date "注册软件中心模块..."
 dbus set softcenter_module_kindledash_install=1
 dbus set softcenter_module_kindledash_title=Kindle仪表盘
 dbus set softcenter_module_kindledash_description=Kindle_DXG墨水屏副屏仪表盘配置
-dbus set softcenter_module_kindledash_version=1.2.5
-dbus set kindledash_version=1.2.5
+dbus set softcenter_module_kindledash_version=1.2.6
+dbus set kindledash_version=1.2.6
 
 # 首次安装时的默认配置(不覆盖用户已有设置)
 [ -z "$(dbus get kindledash_orientation)" ] && dbus set kindledash_orientation=portrait

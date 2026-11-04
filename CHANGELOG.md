@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.6 (2026-11-05)
+
+- 修复：`kindle-dash-start.sh` 在 `/jffs` 上的守护脚本丢失时，回退路径写成了 `/opt/kindle-dash/router/usb-guard.sh`（该目录并不存在，插件把 `scripts/app/*` 直接铺到 `/opt/kindle-dash`）→ 改为 `/opt/kindle-dash/usb-guard.sh`，开机自愈才真正生效
+- 改进：`install.sh` 除把 `usb-guard.sh` 装到 `/jffs/scripts/`，同时保留一份在 `/opt/kindle-dash/`，作为启动脚本的回填源
+- 整理：`router/kindle-dash-start.sh` 与插件内副本 `koolshare/kindledash/scripts/app/kindle-dash-start.sh` 保持逐字节一致（此前插件副本缺 U 盘守护注册段）
+- 文档：README 首页改为**两套版式方案对照**（方案A 原版 / 方案B 大字），补充 `/jffs` 侧部署布局与 `usb-guard.sh` 说明；移除已过时的 `preview_landscape.png` / `preview_portrait.png`
+- 插件版本号 1.2.6
+
+
 ## v1.2.5 (2026-11-05)
 
 - 新增：**U 盘健康守护** `usb-guard.sh`（常驻 `/jffs/scripts/`，cron 每 2 分钟）

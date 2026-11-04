@@ -8,9 +8,11 @@
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](#-quick-start-快速开始)
 [![Router](https://img.shields.io/badge/Router-Merlin%20%7C%20OpenWrt%20%7C%20Raspberry%20Pi-orange)](#-router-side-路由器侧)
 
-| 竖版（正常竖持） | 横版（顺时针横持） |
+| 方案A · 原版（信息量优先） | 方案B · 大字（放远了也看得清） |
 |:---:|:---:|
-| ![portrait](docs/preview_portrait.png) | ![landscape](docs/preview_landscape.png) |
+| ![classic](docs/preview_classic.png) | ![large](docs/preview_large.png) |
+
+> 两套版式在同一台机器上实时切换：插件页『基本设置 → 版式方案』，保存即重绘推送。
 
 **无云端依赖 · 无常驻 Mac · 无额外硬件**：Kindle 插在路由器的 USB 口上，路由器每 15 分钟自己抓数据、渲染成墨水屏友好的灰度图、推到 Kindle 屏幕。
 
@@ -110,6 +112,7 @@ cru a kindle-dash "*/15 * * * * /bin/sh /opt/kindle-dash/run.sh >> /opt/kindle-d
 | `usbnet-up.sh` | Asuswrt-Merlin | 加载 rndis_host/cdc_ether，给 usb0 配 `192.168.2.1/24` |
 | `kindle-dash-start.sh` | 梅林 | 开机自启：配 usb0 + 注册 cron（幂等） |
 | `services-start.snippet.sh` | 梅林 | 追加到 `/jffs/scripts/services-start` 的调用片段 |
+| `usb-guard.sh` | 梅林 | **U 盘健康守护**：每 2 分钟查掉盘/只读/文件系统错误，自动 remount → e2fsck → 恢复 `/opt` 与 cron（务必装在 `/jffs`，不要放 U 盘） |
 | `watchdog.sh` | 通用 | usb0 掉线自愈看门狗（可选，run.sh 本身已含自愈） |
 | `openwrt-usbnet.sh` | OpenWrt / GL.iNet | 复用手机 tethering 驱动接入 Kindle |
 | `pi-usbnet.sh` | Raspberry Pi | Zero W / 4B 等桥接方案（没有空闲路由器 USB 口时的选择） |
@@ -117,13 +120,18 @@ cru a kindle-dash "*/15 * * * * /bin/sh /opt/kindle-dash/run.sh >> /opt/kindle-d
 **推荐部署布局**（Entware 装在 U 盘上）：
 
 ```
-/opt/kindle-dash/
+/opt/kindle-dash/            # 全部在 U 盘上
 ├── dashboard.py      # 渲染器
 ├── config.json       # 你的配置 (从 config.example.json 复制)
 ├── push.sh           # 推送: HTTP 拉取 + md5 校验 + eips 刷屏
 ├── run.sh            # cron 入口: 自愈 usb0 → 渲染 → 推送 → 写缓存
+├── usb-guard.sh      # 守护脚本备份 (开机复制到 /jffs)
 ├── fonts/*.otf       # 思源黑体 (见 fonts/README.md)
 └── cache.json        # 最近一次数据 (源挂了时离线兜底渲染)
+
+/jffs/scripts/               # 在闪存上, U 盘崩了也能跑
+├── kindle-dash-start.sh     # 开机: 配 usb0 + crond 守护 + 注册 cron + 拉起守护
+└── usb-guard.sh             # U 盘健康守护 (cron 每 2 分钟)
 ```
 
 ## 🧩 软件中心插件（梅林）
@@ -229,6 +237,7 @@ sh push.sh                    # 推送到 Kindle (Mac 模式: OpenSSH + 密钥)
 
 | 版本 | 日期 | 更新 |
 |---|---|---|
+| v1.2.6 | 2026-11-05 | 收尾整理：修复守护脚本回退路径、`install.sh` 双份部署、启动脚本与插件副本对齐、README 换两套版式对照图 |
 | v1.2.5 | 2026-11-05 | U 盘健康守护（每 2 分钟自检掉盘/只读/fs 错误，自动 remount→e2fsck→恢复 /opt 与 cron 并补推）；双版式方案后台切换（方案A 原版 / 方案B 大字） |
 | v1.2.4 | 2026-11-05 | 双版式方案：`ui.layout` = classic 原版 / large 大字，插件页下拉切换，两套参数互不覆盖 |
 | v1.2.1 | 2026-10-27 | 配置导入/导出；快讯渠道轮播（新资讯不足自动轮到下一渠道）；热榜去热度值全宽两行显示；横版行情对齐重构 |

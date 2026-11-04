@@ -43,8 +43,8 @@ ps w 2>/dev/null | grep -q '[c]rond' || /usr/sbin/crond -b -l 8 2>/dev/null
 # U 盘守护: 每 2 分钟自检掉盘/只读/文件系统错误并自动恢复。
 # 脚本常驻 /jffs (U 盘崩了照样能执行); 开机先跑一次 + 注册 cron
 UG=/jffs/scripts/usb-guard.sh
-if [ ! -s "$UG" ] && [ -s /opt/kindle-dash/router/usb-guard.sh ]; then
-  cp -f /opt/kindle-dash/router/usb-guard.sh "$UG" 2>/dev/null && chmod +x "$UG" 2>/dev/null
+if [ ! -s "$UG" ] && [ -s /opt/kindle-dash/usb-guard.sh ]; then
+  cp -f /opt/kindle-dash/usb-guard.sh "$UG" 2>/dev/null && chmod +x "$UG" 2>/dev/null
 fi
 if [ -s "$UG" ]; then
   cru d usb-guard 2>/dev/null
