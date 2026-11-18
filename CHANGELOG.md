@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.2.7 (2026-11-19)
+
+- 修复：**选了大字版却渲染成小字版** —— 根因是 `kindledash_config.sh` 的依赖兜底段写成
+  `[ -s /opt/x ] || [ -s app/x ] && cp -f app/x /opt/x`，shell 按 `(A || B) && C` 结合，
+  只要文件存在就**无条件覆盖**。于是每次"环境自检 / 保存并应用"都用插件目录
+  `kindledash_app/` 里的旧版程序盖掉 `/opt` 的新版（实测被盖回 10-27 的版本，
+  不认 `ui.layout`，所以配置里明明是 `large`，渲染出来仍是小字版）
+  → 改为 `[ -s /opt/x ] || { [ -s app/x ] && cp ...; }`，只在 `/opt` 缺文件时才补
+- 修复：插件目录 `kindledash_app/` 里的 `dashboard.py` / `run.sh` / `push.sh` 长期停留在旧版
+  （v1.2.4~v1.2.6 只热更了 `/opt` 与 `/koolshare/scripts`，没同步这个"安装源"）→ 已全部补齐，
+  并把 `usb-guard.sh` 一并纳入
+- 影响面：旧版 `run.sh` 缺 `unset LD_LIBRARY_PATH`，cron 环境下 Entware python 会因
+  `GLIBC_2.27 not found` 崩溃，导致整轮渲染失败（插件的"选版式没反应"往往还叠加了这一层）
+- 插件版本号 1.2.7
+
+
 ## v1.2.6 (2026-11-05)
 
 - 修复：`kindle-dash-start.sh` 在 `/jffs` 上的守护脚本丢失时，回退路径写成了 `/opt/kindle-dash/router/usb-guard.sh`（该目录并不存在，插件把 `scripts/app/*` 直接铺到 `/opt/kindle-dash`）→ 改为 `/opt/kindle-dash/usb-guard.sh`，开机自愈才真正生效

@@ -197,8 +197,12 @@ provision() {
   # ---- 4. 程序文件 + 开机脚本 + cron (install.sh 已复制, 这里兜底) ----
   local APP=/koolshare/scripts/kindledash_app
   mkdir -p /opt/kindle-dash
-  for x in dashboard.py run.sh push.sh; do
-    [ -s /opt/kindle-dash/${x} ] || [ -s ${APP}/${x} ] && cp -f ${APP}/${x} /opt/kindle-dash/${x} 2>/dev/null
+  # 只有 /opt 缺文件时才从插件目录补 —— 原来写成
+  #   [ -s /opt/x ] || [ -s app/x ] && cp
+  # shell 按 (A || B) && C 结合, 只要文件存在就无条件覆盖, 结果每次"自检/保存"
+  # 都用插件目录里的旧版程序盖掉 /opt 的新版(实测: 选了大字版却渲染成小字版)
+  for x in dashboard.py run.sh push.sh usb-guard.sh; do
+    [ -s /opt/kindle-dash/${x} ] || { [ -s ${APP}/${x} ] && cp -f ${APP}/${x} /opt/kindle-dash/${x} 2>/dev/null; }
   done
   chmod +x /opt/kindle-dash/run.sh /opt/kindle-dash/push.sh 2>/dev/null
   [ -s /opt/kindle-dash/config.json ] || cp -f ${APP}/config.default.json /opt/kindle-dash/config.json
